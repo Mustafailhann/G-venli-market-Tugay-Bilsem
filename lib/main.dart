@@ -1223,14 +1223,22 @@ class _UrunListesiEkraniState extends State<UrunListesiEkrani> {
                 onPressed: () => Navigator.pop(dialogContext),
               ),
               ElevatedButton.icon(
-                icon: Icon(Icons.credit_card),
-                label: Text("ÖDEME YAP", style: TextStyle(fontSize: 16)),
+                icon: Icon(Icons.credit_card, color: Colors.white, size: 24),
+                label: Text(
+                  "ÖDEME YAP",
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
                 onPressed: () {
                   Navigator.pop(dialogContext);
                   _kartOkutmaPenceresiniAc();
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.indigo,
+                  foregroundColor: Colors.white,
                   padding: EdgeInsets.symmetric(horizontal: 30, vertical: 15),
                 ),
               ),
@@ -1652,29 +1660,17 @@ class _UrunListesiEkraniState extends State<UrunListesiEkrani> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  // Kategori görseli
-                  Container(
-                    width: 80,
-                    height: 80,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    padding: EdgeInsets.all(8),
-                    child: Image.asset(
-                      kategori.resimYolu,
-                      fit: BoxFit.contain,
-                      errorBuilder: (context, error, stackTrace) {
-                        // Eğer resim bulunamazsa icon göster
-                        return Icon(kategori.icon, size: 60, color: kategori.renk);
-                      },
-                    ),
+                  // Kategori ikonu (resim kaldırıldı)
+                  Icon(
+                    kategori.icon,
+                    size: 80,
+                    color: Colors.white,
                   ),
-                  SizedBox(height: 10),
+                  SizedBox(height: 15),
                   Text(
                     kategori.isim,
                     style: TextStyle(
-                      fontSize: 18,
+                      fontSize: 20,
                       fontWeight: FontWeight.bold,
                       color: Colors.white,
                     ),
@@ -1732,48 +1728,18 @@ class _UrunListesiEkraniState extends State<UrunListesiEkrani> {
       child: Scaffold(
         backgroundColor: Colors.grey[100],
         appBar: AppBar(
+          toolbarHeight: 80, // AppBar yüksekliğini artır
           automaticallyImplyLeading: false, // Sol ok tuşunu kaldır
           title: Text(
             secilenKategori ?? 'Okul Otomat', 
             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 24)
           ),
           actions: [
-            // ANA SAYFAYA DÖN butonu (kategoriler ekranındayken)
-            if (secilenKategori == null)
-              Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: ElevatedButton.icon(
-                  icon: Icon(Icons.home, size: 28),
-                  label: Text(
-                    'ANA SAYFA',
-                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-                  ),
-                  onPressed: () {
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(builder: (context) => AnaSayfaSecim()),
-                    );
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.orange,
-                    foregroundColor: Colors.white,
-                    padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                ),
-              ),
             // BÜYÜK GERİ DÖN butonu (sadece kategori seçiliyse)
             if (secilenKategori != null)
               Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: ElevatedButton.icon(
-                  icon: Icon(Icons.arrow_back, size: 28),
-                  label: Text(
-                    'GERİ DÖN',
-                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-                  ),
+                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                child: ElevatedButton(
                   onPressed: () {
                     setState(() {
                       secilenKategori = null;
@@ -1786,6 +1752,17 @@ class _UrunListesiEkraniState extends State<UrunListesiEkrani> {
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.arrow_back, size: 28),
+                      SizedBox(width: 8),
+                      Text(
+                        'GERİ DÖN',
+                        style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -1837,12 +1814,16 @@ class _UrunListesiEkraniState extends State<UrunListesiEkrani> {
                         Expanded(
                           flex: 3,
                           child: ElevatedButton.icon(
-                            icon: Icon(Icons.account_balance_wallet),
-                            label: Text('BAKİYE SORGULA'),
+                            icon: Icon(Icons.account_balance_wallet, color: Colors.white),
+                            label: Text(
+                              'BAKİYE SORGULA',
+                              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                            ),
                             onPressed: _bakiyeSorgulaBaslat,
                             style: ElevatedButton.styleFrom(
                               minimumSize: Size(0, 50),
                               backgroundColor: Colors.green,
+                              foregroundColor: Colors.white,
                             ),
                           ),
                         ),
@@ -1850,12 +1831,16 @@ class _UrunListesiEkraniState extends State<UrunListesiEkrani> {
                         Expanded(
                           flex: 3,
                           child: ElevatedButton.icon(
-                            icon: Icon(Icons.credit_card),
-                            label: Text('KART İLE ÖDE'),
+                            icon: Icon(Icons.credit_card, color: Colors.white),
+                            label: Text(
+                              'KART İLE ÖDE',
+                              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                            ),
                             onPressed: (toplamTutar > 0) ? _odemePenceresiniAc : null,
                             style: ElevatedButton.styleFrom(
                               minimumSize: Size(0, 50),
                               backgroundColor: Colors.indigo,
+                              foregroundColor: Colors.white,
                             ),
                           ),
                         ),
