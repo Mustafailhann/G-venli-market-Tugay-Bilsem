@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'firebase_options.dart';
 
 // Model imports
 import 'models/ogrenci.dart';
@@ -20,7 +21,9 @@ import 'data/urunler.dart' as Data;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp();
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
   runApp(const OkulOtomatApp());
 }
 
@@ -81,6 +84,8 @@ class AnaSayfaSecim extends StatelessWidget {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
+
+                    SizedBox(height: isTablet ? 20 : 10),
                     Text(
                       'OKUL OTOMAT',
                       style: TextStyle(
@@ -438,39 +443,7 @@ class AnaSayfaSecim extends StatelessWidget {
 }
 
 // --- Veri Modelleri ---
-class Kategori {
-  final String isim;
-  final IconData icon;
-  final Color renk;
-  final String resimYolu;
-
-  Kategori({
-    required this.isim,
-    required this.icon,
-    required this.renk,
-    required this.resimYolu,
-  });
-}
-
-class Urun {
-  final String isim;
-  final double fiyat;
-  final String resimYolu;
-  final String kategori;
-  
-  Urun({
-    required this.isim, 
-    required this.fiyat, 
-    required this.resimYolu,
-    required this.kategori,
-  });
-}
-
-class SepetOgesi {
-  final Urun urun;
-  int miktar;
-  SepetOgesi({required this.urun, this.miktar = 1});
-}
+// Modeller lib/models/urun.dart dosyasından import edilmiştir.
 
 // --- Ana Ekran ---
 class UrunListesiEkrani extends StatefulWidget {
@@ -484,6 +457,11 @@ class _UrunListesiEkraniState extends State<UrunListesiEkrani> {
   // Kart okuyucudan gelen veriyi yakalamak için
   final FocusNode _focusNode = FocusNode();
   final TextEditingController _kartOkuyucuController = TextEditingController();
+  
+  // RAW KEYBOARD LISTENER İÇİN
+  final StringBuffer _kartBuffer = StringBuffer();
+  DateTime _lastKeyPress = DateTime.now();
+  
   Timer? _debounceTimer;
   
   String? secilenKategori; // Hangi kategori seçili
@@ -492,6 +470,10 @@ class _UrunListesiEkraniState extends State<UrunListesiEkrani> {
   // Dialog durumları
   bool _odemeDialogAcik = false;
   bool _bakiyeDialogAcik = false;
+  
+  // Debug ve Status
+  String _statusMesaji = 'Başlatılıyor...';
+  Color _statusRenk = Colors.orange;
 
   @override
   void initState() {
@@ -535,15 +517,13 @@ class _UrunListesiEkraniState extends State<UrunListesiEkrani> {
       if (metin.length >= 10) {
         print('✅ 10+ karakter, timer başlatıldı');
         _debounceTimer?.cancel();
-        _debounceTimer = Timer(const Duration(milliseconds: 500), () {
+        _debounceTimer = Timer(const Duration(milliseconds: 200), () {
           print('⏰ Timer tetiklendi, işlem başlıyor: $metin');
           if (mounted && metin.isNotEmpty) {
             _kartOkutuldu(metin);
             _kartOkuyucuController.clear();
           }
         });
-      } else if (metin.length > 0) {
-        print('⏳ Henüz 10 karakter değil, bekleniyor...');
       }
     });
     
@@ -561,6 +541,30 @@ class _UrunListesiEkraniState extends State<UrunListesiEkrani> {
       _verilerYuklendi = true;
     });
     print("✅ Firebase verileri yüklendi - Kart okuyucu hazır!");
+    
+    setState(() {
+      _statusMesaji = 'Online (${VeriYoneticisi().ogrenciler.length} Öğrenci)';
+      _statusRenk = Colors.green;
+    });
+  }
+  
+  Future<void> _verileriYenile() async {
+    setState(() {
+      _statusMesaji = 'Yenileniyor...';
+      _statusRenk = Colors.orange;
+    });
+    
+    await VeriYoneticisi().verileriYukle();
+    
+    setState(() {
+      if (VeriYoneticisi().ogrenciler.isEmpty) {
+         _statusMesaji = 'Veri Yok / Offline';
+         _statusRenk = Colors.red;
+      } else {
+         _statusMesaji = 'Online (${VeriYoneticisi().ogrenciler.length} Öğrenci)';
+         _statusRenk = Colors.green;
+      }
+    });
   }
 
   @override
@@ -585,35 +589,10 @@ class _UrunListesiEkraniState extends State<UrunListesiEkrani> {
     Kategori(isim: 'Gofretter', icon: Icons.fastfood, renk: Colors.brown, resimYolu: 'assets/images/gofret.png'),
   ];
 
-  final List<Urun> urunler = [
-    // İçecekler
-    Urun(isim: 'Su', fiyat: 5.0, resimYolu: 'assets/images/su.png', kategori: 'İçecekler'),
-    Urun(isim: 'Beypazarı', fiyat: 7.0, resimYolu: 'assets/images/beypazarı.png', kategori: 'İçecekler'),
-    Urun(isim: 'Limonlu Soda', fiyat: 8.0, resimYolu: 'assets/images/limonlu soda.png', kategori: 'İçecekler'),
-    Urun(isim: 'Zen Ananas', fiyat: 12.0, resimYolu: 'assets/images/zen ananas.jpg', kategori: 'İçecekler'),
-    Urun(isim: 'Didi Karpuz-Çilek', fiyat: 10.0, resimYolu: 'assets/images/didi karpuz - çilek.png', kategori: 'İçecekler'),
-    Urun(isim: 'Kurbağa Yumurta İçecek', fiyat: 15.0, resimYolu: 'assets/images/kurbaga yumurtalı ıcecek.jpg', kategori: 'İçecekler'),
-    
-    // Atıştırmalıklar
-    Urun(isim: 'Ruffles', fiyat: 12.0, resimYolu: 'assets/images/ruffles.jpg', kategori: 'Atıştırmalıklar'),
-    Urun(isim: 'Ruffles Ayak Kokulu', fiyat: 13.0, resimYolu: 'assets/images/ayak kokulu ruffles.webp', kategori: 'Atıştırmalıklar'),
-    Urun(isim: 'Çizi Cips', fiyat: 10.0, resimYolu: 'assets/images/çizi cips.png', kategori: 'Atıştırmalıklar'),
-    Urun(isim: 'Haribo Mix', fiyat: 11.0, resimYolu: 'assets/images/harıbi mix.webp', kategori: 'Atıştırmalıklar'),
-    Urun(isim: 'Kolalı Jibiton', fiyat: 9.0, resimYolu: 'assets/images/kolalı jıbılon.png', kategori: 'Atıştırmalıklar'),
-    
-    // Tatlılar
-    Urun(isim: 'Tutku', fiyat: 15.0, resimYolu: 'assets/images/tutku.jpg', kategori: 'Tatlılar'),
-    Urun(isim: 'Nero', fiyat: 14.0, resimYolu: 'assets/images/nerrrrrrro.png', kategori: 'Tatlılar'),
-    Urun(isim: 'Biskrem', fiyat: 12.0, resimYolu: 'assets/images/biskrem.png', kategori: 'Tatlılar'),
-    Urun(isim: 'Avşar', fiyat: 13.0, resimYolu: 'assets/images/avşar.jpg', kategori: 'Tatlılar'),
-    Urun(isim: 'Frambuazlı Sufle', fiyat: 16.0, resimYolu: 'assets/images/fram sufle.jpg', kategori: 'Tatlılar'),
-    Urun(isim: 'Normal Sufle', fiyat: 14.0, resimYolu: 'assets/images/norml suffl.jpg', kategori: 'Tatlılar'),
-    
-    // Gofretter
-    Urun(isim: 'Gofret', fiyat: 10.0, resimYolu: 'assets/images/gofret.png', kategori: 'Gofretter'),
-  ];
+  // Firestore'dan gelen ürünleri kullan
+  List<Urun> get urunler => VeriYoneticisi().urunler;
 
-  List<SepetOgesi> sepet = [];
+  List<SepetItem> sepet = [];
   double toplamTutar = 0.0;
 
   // --- Sepet Fonksiyonları (Aynı) ---
@@ -633,7 +612,7 @@ class _UrunListesiEkraniState extends State<UrunListesiEkrani> {
       if (index != -1) {
         sepet[index].miktar++;
       } else {
-        sepet.add(SepetOgesi(urun: urun, miktar: 1));
+        sepet.add(SepetItem(urun: urun, miktar: 1));
       }
     });
     hesaplaToplamTutar();
@@ -708,6 +687,25 @@ class _UrunListesiEkraniState extends State<UrunListesiEkrani> {
                   "Kartınızı kart okuyucuya yaklaştırın",
                   style: TextStyle(fontSize: 16, color: Colors.grey[600]),
                   textAlign: TextAlign.center,
+                ),
+                SizedBox(height: 10),
+                // DEBUG: Okunan değeri göster
+                ValueListenableBuilder(
+                  valueListenable: _kartOkuyucuController,
+                  builder: (context, TextEditingValue value, __) {
+                    return Column(
+                      children: [
+                        Text(
+                          "Okunan: '${value.text}'", 
+                          style: TextStyle(fontSize: 16, color: Colors.red, fontWeight: FontWeight.bold)
+                        ),
+                        Text(
+                          "Uzunluk: ${value.text.length}",
+                          style: TextStyle(fontSize: 12, color: Colors.grey),
+                        ),
+                      ],
+                    );
+                  },
                 ),
                 SizedBox(height: 30),
                 // Gizli TextField - sadece kart okuyucu için
@@ -1164,13 +1162,21 @@ class _UrunListesiEkraniState extends State<UrunListesiEkrani> {
                             leading: Container(
                               width: 50,
                               height: 50,
-                              child: Image.asset(
-                                sepetOgesi.urun.resimYolu,
-                                fit: BoxFit.contain,
-                                errorBuilder: (context, error, stackTrace) {
-                                  return Icon(Icons.image_not_supported, color: Colors.grey);
-                                },
-                              ),
+                              child: sepetOgesi.urun.resimYolu.startsWith('http') 
+                                ? Image.network(
+                                    sepetOgesi.urun.resimYolu,
+                                    fit: BoxFit.contain,
+                                    errorBuilder: (context, error, stackTrace) {
+                                      return Icon(Icons.image_not_supported, color: Colors.grey);
+                                    },
+                                  )
+                                : Image.asset(
+                                    sepetOgesi.urun.resimYolu,
+                                    fit: BoxFit.contain,
+                                    errorBuilder: (context, error, stackTrace) {
+                                      return Icon(Icons.image_not_supported, color: Colors.grey);
+                                    },
+                                  ),
                             ),
                             title: Text(
                               sepetOgesi.urun.isim,
@@ -1401,14 +1407,9 @@ class _UrunListesiEkraniState extends State<UrunListesiEkrani> {
       if (ogrenci.bakiye >= toplamTutar) {
         print("✅ Yeterli bakiye var, ödeme yapılıyor...");
         // Başarılı ödeme
-        String aciklama = "Otomat alışverişi (${sepet.length} ürün)";
-        
-        // Ürün listesini oluştur (istatistikler ve detay için)
-        List<String> urunListesi = sepet.map((item) => '${item.urun.isim} (x${item.miktar})').toList();
-        
         // Timeout ile ödeme yap (offline modda Firebase takılmasın)
         try {
-          await veriYoneticisi.odemeYap(temizKartID, toplamTutar, aciklama, urunler: urunListesi)
+          await veriYoneticisi.odemeYap(temizKartID, toplamTutar, sepet)
             .timeout(Duration(seconds: 3)); // 3 saniye timeout
         } catch (e) {
           print("⚠️ Ödeme Firebase'e kaydedilemedi ama offline kaydedildi: $e");
@@ -1432,7 +1433,7 @@ class _UrunListesiEkraniState extends State<UrunListesiEkrani> {
           true // Refresh yap
         );
       } else {
-        print("❌ Yetersiz bakiye!");
+        print("❌ Yetersiz Bakiye!");
         if (!mounted) return;
         _sonucGoster(
           "Yetersiz Bakiye", 
@@ -1727,6 +1728,7 @@ class _UrunListesiEkraniState extends State<UrunListesiEkrani> {
       onWillPop: () async => true,
       child: Scaffold(
         backgroundColor: Colors.grey[100],
+
         appBar: AppBar(
           toolbarHeight: 80, // AppBar yüksekliğini artır
           automaticallyImplyLeading: false, // Sol ok tuşunu kaldır
@@ -1735,6 +1737,46 @@ class _UrunListesiEkraniState extends State<UrunListesiEkrani> {
             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 24)
           ),
           actions: [
+            // Status Indicator & Refresh
+            Center( // Center to align vertically in AppBar
+              child: Padding(
+                padding: const EdgeInsets.only(right: 8.0),
+                child: Container(
+                  padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.black26,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 10,
+                        height: 10,
+                        decoration: BoxDecoration(
+                          color: _statusRenk,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      SizedBox(width: 8),
+                      Text(
+                        _statusMesaji, 
+                        style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)
+                      ),
+                      SizedBox(width: 8),
+                      InkWell(
+                        onTap: () {
+                          print("🔄 Kullanıcı verileri yeniliyor...");
+                          _verileriYenile();
+                        },
+                        child: Icon(Icons.refresh, size: 18, color: Colors.white),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
             // BÜYÜK GERİ DÖN butonu (sadece kategori seçiliyse)
             if (secilenKategori != null)
               Padding(
@@ -1861,12 +1903,31 @@ class _UrunListesiEkraniState extends State<UrunListesiEkrani> {
               child: TextField(
                 controller: _kartOkuyucuController,
                 focusNode: _focusNode,
-                keyboardType: TextInputType.none,
-                enableInteractiveSelection: false,
-                showCursor: false,
+                keyboardType: TextInputType.none, // Klavye açılmasın
+                // keyboardType: TextInputType.visiblePassword, 
+                autocorrect: false,
+                enableSuggestions: false,
+                autofocus: true,
+                showCursor: true, // Cursor görünsün ki odak var mı anlayalım
                 decoration: InputDecoration(
                   border: InputBorder.none,
+                  hintText: "Buraya Odaklan", // Debug için
+                  hintStyle: TextStyle(color: Colors.transparent),
                 ),
+                onChanged: (val) {
+                  print("📝 TextField onChanged: $val");
+                },
+                onSubmitted: (val) {
+                  print("📩 TextField onSubmitted: $val");
+                  if (val.isNotEmpty) {
+                    _kartOkutuldu(val);
+                    _kartOkuyucuController.clear();
+                    // Focus'u koru
+                    Future.delayed(Duration(milliseconds: 100), () {
+                      _focusNode.requestFocus();
+                    });
+                  }
+                },
               ),
             ),
           ),
@@ -1923,19 +1984,29 @@ class UrunKarti extends StatelessWidget {
               Expanded(
                 child: Padding(
                   padding: const EdgeInsets.all(8.0),
-                  child: Image.asset(
-                    urun.resimYolu,
-                    fit: BoxFit.contain,
-                    // Eğer resim yüklenemezse (örn: dosya adı yanlışsa)
-                    // Hata yerine bir ikon gösterir
-                    errorBuilder: (context, error, stackTrace) {
-                      return Icon(
-                        Icons.image_not_supported,
-                        size: 60,
-                        color: Colors.grey[300],
-                      );
-                    },
-                  ),
+                  child: urun.resimYolu.startsWith('http')
+                    ? Image.network(
+                        urun.resimYolu,
+                        fit: BoxFit.contain,
+                        errorBuilder: (context, error, stackTrace) {
+                          return Icon(
+                            Icons.image_not_supported,
+                            size: 60,
+                            color: Colors.grey[300],
+                          );
+                        },
+                      )
+                    : Image.asset(
+                        urun.resimYolu,
+                        fit: BoxFit.contain,
+                        errorBuilder: (context, error, stackTrace) {
+                          return Icon(
+                            Icons.image_not_supported,
+                            size: 60,
+                            color: Colors.grey[300],
+                          );
+                        },
+                      ),
                 ),
               ),
               SizedBox(height: 10),
@@ -2234,6 +2305,7 @@ class _AdminPaneliState extends State<AdminPaneli> with SingleTickerProviderStat
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    veriYoneticisi.addListener(_onVeriDegisti);
     _verileriYukle();
   }
 
@@ -2243,8 +2315,13 @@ class _AdminPaneliState extends State<AdminPaneli> with SingleTickerProviderStat
     setState(() => _yukleniyor = false);
   }
 
+  void _onVeriDegisti() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void dispose() {
+    veriYoneticisi.removeListener(_onVeriDegisti);
     _tabController.dispose();
     super.dispose();
   }
@@ -2761,7 +2838,7 @@ class _AdminPaneliState extends State<AdminPaneli> with SingleTickerProviderStat
               TextField(
                 controller: sinifController,
                 decoration: InputDecoration(
-                  labelText: 'Sınıf (örn: 9-A)',
+                  labelText: 'Sınıf (örn: BYF - 1)',
                   border: OutlineInputBorder(),
                 ),
               ),

@@ -2,9 +2,12 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/foundation.dart';
 import '../models/ogrenci.dart';
+import '../models/urun.dart';
 
-class VeriYoneticisi {
+class VeriYoneticisi extends ChangeNotifier {
   static final VeriYoneticisi _instance = VeriYoneticisi._internal();
   factory VeriYoneticisi() => _instance;
   VeriYoneticisi._internal();
@@ -23,6 +26,9 @@ class VeriYoneticisi {
   // Ürün satış takibi
   final Map<String, int> urunSatislari = {};
   
+  // Ürün Listesi (Firestore'dan gelecek)
+  List<Urun> urunler = [];
+
   // OFFLINE DEPOLAMA
   SharedPreferences? _prefs;
   List<Map<String, dynamic>> _offlineIslemler = [];
@@ -39,6 +45,7 @@ class VeriYoneticisi {
       await Future.wait([
         _ogrencileriYukle(),
         _urunSatislariniYukle(),
+        _urunleriYukle(), // Yeni ürün yükleme fonksiyonu
       ]);
       _internetVarMi = true;
       print('✅ Firebase verileri yüklendi - Kart okuyucu hazır!');
@@ -55,34 +62,61 @@ class VeriYoneticisi {
     }
   }
 
-  Future<void> _ogrencileriYukle() async {
-    try {
-      final snapshot = await _firestore.collection('ogrenciler').get();
-      
-      for (var doc in snapshot.docs) {
-        final data = doc.data();
-        final islemler = (data['islemGecmisi'] as List?)?.map((islem) {
-          return Islem(
-            tarih: (islem['tarih'] as Timestamp).toDate(),
-            tip: islem['tip'],
-            tutar: (islem['tutar'] as num).toDouble(),
-            aciklama: islem['aciklama'],
-            urunler: (islem['urunler'] as List?)?.cast<String>(),
-          );
-        }).toList() ?? [];
+  // Stream Subscriptions
+  StreamSubscription? _ogrenciSubscription;
+  StreamSubscription? _urunSubscription;
 
-        ogrenciler[doc.id] = Ogrenci(
-          kartID: doc.id,
-          adSoyad: data['adSoyad'],
-          sinif: data['sinif'],
-          bakiye: (data['bakiye'] as num).toDouble(),
-          islemGecmisi: islemler,
-        );
-      }
-      print('✅ ${snapshot.docs.length} öğrenci Firestore\'dan yüklendi (Toplam: ${ogrenciler.length})');
+  Future<void> _ogrencileriYukle() async {
+    final completer = Completer<void>();
+
+    try {
+      // Önceki dinlemeyi iptal et
+      await _ogrenciSubscription?.cancel();
+      
+      // Real-time listener başlat
+      _ogrenciSubscription = _firestore.collection('ogrenciler').snapshots().listen(
+        (snapshot) {
+          for (var doc in snapshot.docs) {
+            final data = doc.data();
+            final islemler = (data['islemGecmisi'] as List?)?.map((islem) {
+              return Islem(
+                tarih: (islem['tarih'] as Timestamp).toDate(),
+                tip: islem['tip'],
+                tutar: (islem['tutar'] as num).toDouble(),
+                aciklama: islem['aciklama'],
+                urunler: (islem['urunler'] as List?)?.cast<String>(),
+              );
+            }).toList() ?? [];
+
+            ogrenciler[doc.id] = Ogrenci(
+              kartID: doc.id,
+              adSoyad: data['adSoyad'],
+              sinif: data['sinif'],
+              bakiye: (data['bakiye'] as num).toDouble(),
+              islemGecmisi: islemler,
+            );
+          }
+          print('✅ ${snapshot.docs.length} öğrenci güncellendi (Stream)');
+          notifyListeners();
+          
+          // İlk veri geldiğinde future'ı tamamla
+          if (!completer.isCompleted) completer.complete();
+        },
+        onError: (e) {
+          print('❌ Öğrenci stream hatası: $e');
+          if (!completer.isCompleted) completer.completeError(e);
+        },
+      );
+
+      // İlk veriyi bekle (maksimum 5 saniye)
+      await completer.future.timeout(Duration(seconds: 5), onTimeout: () {
+        print('⚠️ İlk veri yükleme zaman aşımı, ancak dinleme devam ediyor.');
+      });
+      
     } catch (e) {
-      print('❌ Öğrenciler yüklenirken hata: $e');
+      print('⚠️ Yeni öğrenci eklenirken hata (Offline): $e');
     }
+    notifyListeners();
   }
 
   Future<void> _urunSatislariniYukle() async {
@@ -97,6 +131,51 @@ class VeriYoneticisi {
       }
     } catch (e) {
       print('❌ Ürün satışları yüklenirken hata: $e');
+    }
+  }
+
+  Future<void> _urunleriYukle() async {
+    final completer = Completer<void>();
+
+    try {
+      // Önceki dinlemeyi iptal et
+      await _urunSubscription?.cancel();
+
+      // Real-time listener başlat
+      _urunSubscription = _firestore.collection('urunler').snapshots().listen(
+        (snapshot) {
+          urunler.clear(); // Listeyi temizle ve yeniden oluştur
+          
+          for (var doc in snapshot.docs) {
+            final data = doc.data();
+            urunler.add(Urun(
+              id: doc.id,
+              isim: data['ad'] ?? 'İsimsiz Ürün',
+              fiyat: (data['fiyat'] as num?)?.toDouble() ?? 0.0,
+              resimYolu: data['resimURL'] ?? '',
+              kategori: data['kategori'] ?? 'Diğer',
+              stok: (data['stok'] as int?) ?? 0,
+            ));
+          }
+
+          print('✅ ${urunler.length} ürün güncellendi (Stream)');
+          notifyListeners();
+          
+          if (!completer.isCompleted) completer.complete();
+        },
+        onError: (e) {
+          print('❌ Ürün stream hatası: $e');
+          if (!completer.isCompleted) completer.completeError(e);
+        },
+      );
+
+      // İlk veriyi bekle
+      await completer.future.timeout(Duration(seconds: 5), onTimeout: () {
+        print('⚠️ Ürün verisi yükleme zaman aşımı.');
+      });
+
+    } catch (e) {
+      print('❌ Ürünler yüklenirken hata: $e');
     }
   }
 
@@ -139,62 +218,85 @@ class VeriYoneticisi {
           'aciklama': yeniIslem.aciklama,
         });
       }
+      notifyListeners();
     }
   }
 
-  Future<void> odemeYap(String kartID, double tutar, String aciklama, {List<String>? urunler}) async {
-    if (ogrenciler.containsKey(kartID)) {
-      ogrenciler[kartID]!.bakiye -= tutar;
-      final yeniIslem = Islem(
-        tarih: DateTime.now(),
-        tip: 'Ödeme',
-        tutar: -tutar,
-        aciklama: aciklama,
-        urunler: urunler,
-      );
-      ogrenciler[kartID]!.islemGecmisi.add(yeniIslem);
+  Future<bool> odemeYap(String kartID, double tutar, List<SepetItem> sepet) async {
+    try {
+      final docRef = _firestore.collection('ogrenciler').doc(kartID);
       
-      if (urunler != null) {
-        for (var urun in urunler) {
-          String urunIsmi = urun.split(' (x')[0];
-          urunSatislari[urunIsmi] = (urunSatislari[urunIsmi] ?? 0) + 1;
+      // Satılan ürünlerin isimleri ve stok güncellemeleri
+      WriteBatch batch = _firestore.batch();
+      
+      print('💳 Ödeme Yapılıyor: Kart: $kartID, Tutar: $tutar');
+      
+      // Bakiye düşme işlemi
+      final islem = {
+        'tarih': Timestamp.now(),
+        'tip': 'Harcama',
+        'tutar': -tutar, // Negatif tutar (Harcama)
+        'aciklama': 'Kantin Alışverişi',
+        'urunler': sepet.map((item) => "${item.urun.isim} (x${item.miktar})").toList()
+      };
+
+      batch.update(docRef, {
+        'bakiye': FieldValue.increment(-tutar),
+        'islemGecmisi': FieldValue.arrayUnion([islem])
+      });
+
+      // İstatistik ve Stok Güncelleme - Batch işlemine ekle
+      final istatistikRef = _firestore.collection('istatistikler').doc('urunSatislari');
+      Map<String, dynamic> istatistikUpdate = {};
+
+      for (var item in sepet) {
+        // İstatistik güncellemesi
+        istatistikUpdate[item.urun.isim] = FieldValue.increment(item.miktar);
+        
+        // Stok düşme işlemi
+        try {
+            String? urunId = item.urun.id;
+            
+            // ID yoksa isimden bul
+            if (urunId == null) {
+                final stokUrun = urunler.firstWhere(
+                    (u) => u.isim == item.urun.isim, 
+                    orElse: () => Urun(isim: '', fiyat: 0, resimYolu: '', kategori: '', stok: 0)
+                );
+                urunId = stokUrun.id;
+            }
+
+            if (urunId != null && urunId.isNotEmpty) {
+                final urunRef = _firestore.collection('urunler').doc(urunId);
+                batch.update(urunRef, {
+                    'stok': FieldValue.increment(-item.miktar)
+                });
+            } else {
+                print('⚠️ Stok düşülecek ürün ID bulunamadı: ${item.urun.isim}');
+            }
+        } catch (e) {
+            print('⚠️ Stok düşme hatası (${item.urun.isim}): $e');
         }
       }
-      
-      await _ogrencileriOfflineKaydet();
 
-      try {
-        // Timeout ile Firebase'e kaydet (offline modda hızlı fail olsun)
-        await _firestore.collection('ogrenciler').doc(kartID).update({
-          'bakiye': ogrenciler[kartID]!.bakiye,
-          'islemGecmisi': FieldValue.arrayUnion([{
-            'tarih': Timestamp.fromDate(yeniIslem.tarih),
-            'tip': yeniIslem.tip,
-            'tutar': yeniIslem.tutar,
-            'aciklama': yeniIslem.aciklama,
-            'urunler': yeniIslem.urunler,
-          }]),
-        }).timeout(Duration(seconds: 2));
-
-        if (urunler != null) {
-          await _firestore.collection('istatistikler').doc('urunSatislari').set(
-            urunSatislari,
-            SetOptions(merge: true),
-          ).timeout(Duration(seconds: 2));
-        }
-        print('✅ Ödeme Firestore\'a kaydedildi: $kartID - $tutar TL');
-      } catch (e) {
-        print('⚠️ İnternet yok - Offline kaydedildi: $e');
-        await _offlineIslemEkle({
-          'tip': 'odeme',
-          'kartID': kartID,
-          'tutar': -tutar,
-          'yeniBakiye': ogrenciler[kartID]!.bakiye,
-          'tarih': yeniIslem.tarih.toIso8601String(),
-          'aciklama': aciklama,
-          'urunler': urunler,
-        });
+      if (istatistikUpdate.isNotEmpty) {
+        batch.set(istatistikRef, istatistikUpdate, SetOptions(merge: true));
       }
+
+      // Tüm işlemleri tek seferde uygula
+      await batch.commit();
+
+      // Yerel istatistikleri güncelle
+       for (var item in sepet) {
+        urunSatislari[item.urun.isim] = (urunSatislari[item.urun.isim] ?? 0) + item.miktar;
+      }
+      
+      
+      notifyListeners(); // İstatistikler güncellendiği için
+      return true;
+    } catch (e) {
+      print('❌ Ödeme hatası: $e');
+      return false;
     }
   }
 
@@ -212,6 +314,7 @@ class VeriYoneticisi {
     } catch (e) {
       print('❌ Öğrenci ekleme hatası: $e');
     }
+    notifyListeners();
   }
   
   // ===== OFFLINE FONKSİYONLARI =====
@@ -317,8 +420,10 @@ class VeriYoneticisi {
             'bakiye': islem['yeniBakiye'],
             'islemGecmisi': FieldValue.arrayUnion([{
               'tarih': Timestamp.fromDate(DateTime.parse(islem['tarih'])),
-              'tip': 'Ödeme',
-              'tutar': islem['tutar'],
+              'tip': 'Harcama',
+              'tutar': islem['tutar'] is double && (islem['tutar'] as double) > 0 
+                  ? -(islem['tutar'] as double) 
+                  : islem['tutar'], // Yüklerken zaten negatif değilse negatif yap
               'aciklama': islem['aciklama'],
               'urunler': islem['urunler'],
             }]),

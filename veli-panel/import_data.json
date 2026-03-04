@@ -1,0 +1,51 @@
+[
+    {
+        "ogrenciAdi": "Ömer ŞAHİN",
+        "babaAdi": "Ömer ŞAHİN",
+        "babaTel": "5076900418",
+        "anneAdi": "Arzu ŞAHİN",
+        "anneTel": "5076900417"
+    },
+    {
+        "ogrenciAdi": "Mehmet TAŞDEMİR",
+        "babaAdi": "Mehmet TAŞDEMİR",
+        "babaTel": "5368653882",
+        "anneAdi": "Ayşe TAŞDEMİR",
+        "anneTel": "5386310554"
+    },
+    {
+        "ogrenciAdi": "Osman GENÇ",
+        "babaAdi": "Osman GENÇ",
+        "babaTel": "5053155959",
+        "anneAdi": "Şeymagül YILMAZ",
+        "anneTel": "5053155959"
+    },
+    {
+        "ogrenciAdi": "Mustafa HOROZ",
+        "babaAdi": "Mustafa HOROZ",
+        "babaTel": "5530547989",
+        "anneAdi": "Nurten HOROZ",
+        "anneTel": "5326163108"
+    },
+    {
+        "ogrenciAdi": "Turgay DÜNDAR",
+        "babaAdi": "Turgay DÜNDAR",
+        "babaTel": "5327862483",
+        "anneAdi": "Fatma DÜNDAR",
+        "anneTel": "5066317016"
+    },
+    {
+        "ogrenciAdi": "Fevzi Ozan DAMAT",
+        "babaAdi": "Fevzi Ozan DAMAT",
+        "babaTel": "5052346652",
+        "anneAdi": "Aysun DAMAT",
+        "anneTel": "5063915285"
+    },
+    {
+        "ogrenciAdi": "Mustafa KAYA",
+        "babaAdi": "Mustafa KAYA",
+        "babaTel": "5306106097",
+        "anneAdi": "Sibel KAYA",
+        "anneTel": "5399516097"
+    }
+]

@@ -1,16 +1,20 @@
 import 'package:flutter/material.dart';
 
 class Urun {
+  String? id;
   String isim;
   double fiyat;
   String resimYolu;
   String kategori;
+  int stok;
 
   Urun({
+    this.id,
     required this.isim,
     required this.fiyat,
     required this.resimYolu,
     required this.kategori,
+    this.stok = 0,
   });
 }
 
