@@ -47,11 +47,22 @@ export default function CocukCard({ cocuk }: CocukCardProps) {
 
                 {isApproved && cocuk.ogrenciData && (
                     <div className="space-y-4">
-                        <div className="bg-gray-50 rounded-lg p-3">
-                            <p className="text-xs text-gray-500 mb-1">Mevcut Bakiye</p>
-                            <p className="text-2xl font-bold text-green-600">
-                                {cocuk.ogrenciData.bakiye.toFixed(2)} ₺
+                        <div className={`rounded-lg p-3 ${cocuk.ogrenciData.bakiye < 0 ? 'bg-red-50 border border-red-100' : 'bg-gray-50'}`}>
+                            <div className="flex justify-between items-start mb-1">
+                                <p className={`text-xs ${cocuk.ogrenciData.bakiye < 0 ? 'text-red-500 font-medium' : 'text-gray-500'}`}>Mevcut Bakiye</p>
+                                {cocuk.ogrenciData.bakiye <= -10 && (
+                                    <span className="px-1.5 py-0.5 bg-red-600 text-white text-[10px] font-bold rounded">LİMİT DOLDU</span>
+                                )}
+                            </div>
+                            <p className={`text-2xl font-bold ${cocuk.ogrenciData.bakiye < 0 ? 'text-red-600' : 'text-green-600'}`}>
+                                {cocuk.ogrenciData.bakiye.toFixed(2).replace('-', '- ')} ₺
                             </p>
+                            {cocuk.ogrenciData.bakiye < 0 && cocuk.ogrenciData.bakiye > -10 && (
+                                <p className="text-xs text-red-500 mt-2 font-medium">Dikkat: Öğrencinizin bakiyesi eksiye düşmüştür!</p>
+                            )}
+                            {cocuk.ogrenciData.bakiye <= -10 && (
+                                <p className="text-xs text-red-600 mt-2 font-bold">Limit doldu. Daha fazla harcama yapılamaz.</p>
+                            )}
                         </div>
 
                         {cocuk.ogrenciData.islemGecmisi.length > 0 && (

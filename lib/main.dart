@@ -15,6 +15,7 @@ import 'models/urun.dart';
 
 // Service imports
 import 'services/veri_yoneticisi.dart';
+import 'services/update_service.dart';
 
 // Data imports
 import 'data/urunler.dart' as Data;
@@ -58,8 +59,21 @@ class OkulOtomatApp extends StatelessWidget {
 }
 
 // Ana Sayfa Seçim Ekranı
-class AnaSayfaSecim extends StatelessWidget {
+class AnaSayfaSecim extends StatefulWidget {
   const AnaSayfaSecim({Key? key}) : super(key: key);
+
+  @override
+  State<AnaSayfaSecim> createState() => _AnaSayfaSecimState();
+}
+
+class _AnaSayfaSecimState extends State<AnaSayfaSecim> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      UpdateService.checkForUpdates(context);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -586,7 +600,10 @@ class _UrunListesiEkraniState extends State<UrunListesiEkrani> {
     Kategori(isim: 'İçecekler', icon: Icons.local_drink, renk: Colors.blue, resimYolu: 'assets/images/beypazarı.png'),
     Kategori(isim: 'Atıştırmalıklar', icon: Icons.cookie, renk: Colors.orange, resimYolu: 'assets/images/ruffles.jpg'),
     Kategori(isim: 'Tatlılar', icon: Icons.cake, renk: Colors.red, resimYolu: 'assets/images/tutku.jpg'),
-    Kategori(isim: 'Gofretter', icon: Icons.fastfood, renk: Colors.brown, resimYolu: 'assets/images/gofret.png'),
+    Kategori(isim: 'Gofretler', icon: Icons.fastfood, renk: Colors.brown, resimYolu: 'assets/images/gofret.png'),
+    Kategori(isim: 'Kekler', icon: Icons.breakfast_dining, renk: Colors.yellow, resimYolu: 'assets/images/tutku.jpg'),
+    Kategori(isim: 'Krakerler', icon: Icons.bakery_dining, renk: Colors.orangeAccent, resimYolu: 'assets/images/çizi cips.png'),
+    Kategori(isim: 'Çikolatalar', icon: Icons.icecream, renk: Colors.brown, resimYolu: 'assets/images/biskrem.png'),
   ];
 
   // Firestore'dan gelen ürünleri kullan
@@ -672,248 +689,250 @@ class _UrunListesiEkraniState extends State<UrunListesiEkrani> {
               style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold),
               textAlign: TextAlign.center,
             ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.credit_card, size: 100, color: Colors.green),
-                SizedBox(height: 30),
-                Text(
-                  "Lütfen kartınızı okutun...",
-                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-                  textAlign: TextAlign.center,
-                ),
-                SizedBox(height: 10),
-                Text(
-                  "Kartınızı kart okuyucuya yaklaştırın",
-                  style: TextStyle(fontSize: 16, color: Colors.grey[600]),
-                  textAlign: TextAlign.center,
-                ),
-                SizedBox(height: 10),
-                // DEBUG: Okunan değeri göster
-                ValueListenableBuilder(
-                  valueListenable: _kartOkuyucuController,
-                  builder: (context, TextEditingValue value, __) {
-                    return Column(
-                      children: [
-                        Text(
-                          "Okunan: '${value.text}'", 
-                          style: TextStyle(fontSize: 16, color: Colors.red, fontWeight: FontWeight.bold)
-                        ),
-                        Text(
-                          "Uzunluk: ${value.text.length}",
-                          style: TextStyle(fontSize: 12, color: Colors.grey),
-                        ),
-                      ],
-                    );
-                  },
-                ),
-                SizedBox(height: 30),
-                // Gizli TextField - sadece kart okuyucu için
-                TextField(
-                  controller: _kartOkuyucuController,
-                  focusNode: _focusNode,
-                  autofocus: true,
-                  style: TextStyle(color: Colors.transparent),
-                  decoration: InputDecoration(
-                    border: InputBorder.none,
-                    counterText: '',
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.credit_card, size: 100, color: Colors.green),
+                  SizedBox(height: 30),
+                  Text(
+                    "Lütfen kartınızı okutun...",
+                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                    textAlign: TextAlign.center,
                   ),
-                  maxLength: 50,
-                  onChanged: (kartID) {
-                    // Kart okuyucu ENTER basmıyor, onChanged kullan
-                    print("🟢 Bakiye sorgula - Kart değişti: $kartID (Uzunluk: ${kartID.length})");
-                    if (kartID.trim().length >= 10) {
-                      // Yeterli karakter okundu, işlem yap
-                      Navigator.pop(dialogContext); // Dialog'u kapat
-                      
-                      String temizKartID = '';
-                      for (int i = 0; i < kartID.trim().length; i++) {
-                        if (i == 0 || kartID.trim()[i] != kartID.trim()[i - 1]) {
-                          temizKartID += kartID.trim()[i];
+                  SizedBox(height: 10),
+                  Text(
+                    "Kartınızı kart okuyucuya yaklaştırın",
+                    style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+                    textAlign: TextAlign.center,
+                  ),
+                  SizedBox(height: 10),
+                  // DEBUG: Okunan değeri göster
+                  ValueListenableBuilder(
+                    valueListenable: _kartOkuyucuController,
+                    builder: (context, TextEditingValue value, __) {
+                      return Column(
+                        children: [
+                          Text(
+                            "Okunan: '${value.text}'", 
+                            style: TextStyle(fontSize: 16, color: Colors.red, fontWeight: FontWeight.bold)
+                          ),
+                          Text(
+                            "Uzunluk: ${value.text.length}",
+                            style: TextStyle(fontSize: 12, color: Colors.grey),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                  SizedBox(height: 30),
+                  // Gizli TextField - sadece kart okuyucu için
+                  TextField(
+                    controller: _kartOkuyucuController,
+                    focusNode: _focusNode,
+                    autofocus: true,
+                    style: TextStyle(color: Colors.transparent),
+                    decoration: InputDecoration(
+                      border: InputBorder.none,
+                      counterText: '',
+                    ),
+                    maxLength: 50,
+                    onChanged: (kartID) {
+                      // Kart okuyucu ENTER basmıyor, onChanged kullan
+                      print("🟢 Bakiye sorgula - Kart değişti: $kartID (Uzunluk: ${kartID.length})");
+                      if (kartID.trim().length >= 10) {
+                        // Yeterli karakter okundu, işlem yap
+                        Navigator.pop(dialogContext); // Dialog'u kapat
+                        
+                        String temizKartID = '';
+                        for (int i = 0; i < kartID.trim().length; i++) {
+                          if (i == 0 || kartID.trim()[i] != kartID.trim()[i - 1]) {
+                            temizKartID += kartID.trim()[i];
+                          }
                         }
-                      }
-                      print("🧹 Temizlenmiş ID: $temizKartID");
-                      
-                      final veriYoneticisi = VeriYoneticisi();
-                      final ogrenci = veriYoneticisi.ogrenciBul(temizKartID);
-                      
-                      if (ogrenci != null) {
-                        print("✅ Öğrenci bulundu: ${ogrenci.adSoyad}, Bakiye: ${ogrenci.bakiye}");
-                        showDialog(
-                          context: context,
-                          builder: (context) => AlertDialog(
-                            title: Text("Bakiye Bilgisi", style: TextStyle(color: Colors.green)),
-                            content: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(ogrenci.adSoyad, style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-                                SizedBox(height: 8),
-                                Text(ogrenci.sinif, style: TextStyle(fontSize: 16, color: Colors.grey)),
-                                SizedBox(height: 20),
-                                Text("Mevcut Bakiye:", style: TextStyle(fontSize: 16, color: Colors.grey)),
-                                Text("${ogrenci.bakiye.toStringAsFixed(2)} TL", style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.green)),
+                        print("🧹 Temizlenmiş ID: $temizKartID");
+                        
+                        final veriYoneticisi = VeriYoneticisi();
+                        final ogrenci = veriYoneticisi.ogrenciBul(temizKartID);
+                        
+                        if (ogrenci != null) {
+                          print("✅ Öğrenci bulundu: ${ogrenci.adSoyad}, Bakiye: ${ogrenci.bakiye}");
+                          showDialog(
+                            context: context,
+                            builder: (context) => AlertDialog(
+                              title: Text("Bakiye Bilgisi", style: TextStyle(color: Colors.green)),
+                              content: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(ogrenci.adSoyad, style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                                  SizedBox(height: 8),
+                                  Text(ogrenci.sinif, style: TextStyle(fontSize: 16, color: Colors.grey)),
+                                  SizedBox(height: 20),
+                                  Text("Mevcut Bakiye:", style: TextStyle(fontSize: 16, color: Colors.grey)),
+                                  Text("${ogrenci.bakiye.toStringAsFixed(2)} TL", style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.green)),
+                                ],
+                              ),
+                              actions: [
+                                TextButton(
+                                  child: Text("Tamam", style: TextStyle(fontSize: 18)),
+                                  onPressed: () {
+                                    Navigator.pop(context);
+                                    _focusNode.requestFocus();
+                                  },
+                                ),
                               ],
                             ),
-                            actions: [
-                              TextButton(
-                                child: Text("Tamam", style: TextStyle(fontSize: 18)),
-                                onPressed: () {
-                                  Navigator.pop(context);
-                                  _focusNode.requestFocus();
-                                },
-                              ),
-                            ],
-                          ),
-                        );
-                      } else {
-                        print("❌ Öğrenci bulunamadı: $temizKartID");
-                        showDialog(
-                          context: context,
-                          builder: (context) => AlertDialog(
-                            title: Text("Tanımsız Kart", style: TextStyle(color: Colors.red)),
-                            content: Text("Bu kart sisteme kayıtlı değil.\nKart ID: $temizKartID"),
-                            actions: [
-                              TextButton(
-                                child: Text("Tamam", style: TextStyle(fontSize: 18)),
-                                onPressed: () {
-                                  Navigator.pop(context);
-                                  _focusNode.requestFocus();
-                                },
-                              ),
-                            ],
-                          ),
-                        );
-                      }
-                      
-                      _kartOkuyucuController.clear();
-                    }
-                  },
-                  onSubmitted: (kartID) {
-                    print("🟢 Bakiye sorgula - Kart okundu (ENTER): $kartID");
-                    if (kartID.isNotEmpty) {
-                      Navigator.pop(dialogContext); // Dialog'u kapat
-                      
-                      // Kart ID'sini temizle
-                      String temizKartID = '';
-                      for (int i = 0; i < kartID.length; i++) {
-                        if (i == 0 || kartID[i] != kartID[i - 1]) {
-                          temizKartID += kartID[i];
-                        }
-                      }
-                      print("🧹 Temizlenmiş ID: $temizKartID");
-                      
-                      // Öğrenciyi bul ve bakiyeyi göster
-                      final veriYoneticisi = VeriYoneticisi();
-                      final ogrenci = veriYoneticisi.ogrenciBul(temizKartID);
-                      
-                      if (ogrenci != null) {
-                        print("✅ Öğrenci bulundu: ${ogrenci.adSoyad}, Bakiye: ${ogrenci.bakiye}");
-                        showDialog(
-                          context: context,
-                          builder: (context) => AlertDialog(
-                            title: Text(
-                              "Öğrenci Bilgileri",
-                              style: TextStyle(color: Colors.indigo, fontWeight: FontWeight.bold),
-                              textAlign: TextAlign.center,
+                          );
+                        } else {
+                          print("❌ Öğrenci bulunamadı: $temizKartID");
+                          showDialog(
+                            context: context,
+                            builder: (context) => AlertDialog(
+                              title: Text("Tanımsız Kart", style: TextStyle(color: Colors.red)),
+                              content: Text("Bu kart sisteme kayıtlı değil.\nKart ID: $temizKartID"),
+                              actions: [
+                                TextButton(
+                                  child: Text("Tamam", style: TextStyle(fontSize: 18)),
+                                  onPressed: () {
+                                    Navigator.pop(context);
+                                    _focusNode.requestFocus();
+                                  },
+                                ),
+                              ],
                             ),
-                            content: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                CircleAvatar(
-                                  radius: 50,
-                                  backgroundColor: Colors.indigo,
-                                  child: Text(
-                                    ogrenci.adSoyad[0],
-                                    style: TextStyle(fontSize: 40, color: Colors.white),
+                          );
+                        }
+                        
+                        _kartOkuyucuController.clear();
+                      }
+                    },
+                    onSubmitted: (kartID) {
+                      print("🟢 Bakiye sorgula - Kart okundu (ENTER): $kartID");
+                      if (kartID.isNotEmpty) {
+                        Navigator.pop(dialogContext); // Dialog'u kapat
+                        
+                        // Kart ID'sini temizle
+                        String temizKartID = '';
+                        for (int i = 0; i < kartID.length; i++) {
+                          if (i == 0 || kartID[i] != kartID[i - 1]) {
+                            temizKartID += kartID[i];
+                          }
+                        }
+                        print("🧹 Temizlenmiş ID: $temizKartID");
+                        
+                        // Öğrenciyi bul ve bakiyeyi göster
+                        final veriYoneticisi = VeriYoneticisi();
+                        final ogrenci = veriYoneticisi.ogrenciBul(temizKartID);
+                        
+                        if (ogrenci != null) {
+                          print("✅ Öğrenci bulundu: ${ogrenci.adSoyad}, Bakiye: ${ogrenci.bakiye}");
+                          showDialog(
+                            context: context,
+                            builder: (context) => AlertDialog(
+                              title: Text(
+                                "Öğrenci Bilgileri",
+                                style: TextStyle(color: Colors.indigo, fontWeight: FontWeight.bold),
+                                textAlign: TextAlign.center,
+                              ),
+                              content: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  CircleAvatar(
+                                    radius: 50,
+                                    backgroundColor: Colors.indigo,
+                                    child: Text(
+                                      ogrenci.adSoyad[0],
+                                      style: TextStyle(fontSize: 40, color: Colors.white),
+                                    ),
                                   ),
-                                ),
-                                SizedBox(height: 20),
-                                Text(
-                                  ogrenci.adSoyad,
-                                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-                                  textAlign: TextAlign.center,
-                                ),
-                                SizedBox(height: 10),
-                                Text(
-                                  ogrenci.sinif,
-                                  style: TextStyle(fontSize: 18, color: Colors.grey[600]),
-                                ),
-                                SizedBox(height: 20),
-                                Container(
-                                  padding: EdgeInsets.all(16),
-                                  decoration: BoxDecoration(
-                                    color: Colors.green.shade50,
-                                    borderRadius: BorderRadius.circular(10),
+                                  SizedBox(height: 20),
+                                  Text(
+                                    ogrenci.adSoyad,
+                                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                                    textAlign: TextAlign.center,
                                   ),
-                                  child: Column(
-                                    children: [
-                                      Text(
-                                        'Mevcut Bakiye',
-                                        style: TextStyle(fontSize: 14, color: Colors.grey[600]),
-                                      ),
-                                      SizedBox(height: 5),
-                                      Text(
-                                        '${ogrenci.bakiye.toStringAsFixed(2)} TL',
-                                        style: TextStyle(
-                                          fontSize: 36,
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.green,
+                                  SizedBox(height: 10),
+                                  Text(
+                                    ogrenci.sinif,
+                                    style: TextStyle(fontSize: 18, color: Colors.grey[600]),
+                                  ),
+                                  SizedBox(height: 20),
+                                  Container(
+                                    padding: EdgeInsets.all(16),
+                                    decoration: BoxDecoration(
+                                      color: Colors.green.shade50,
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: Column(
+                                      children: [
+                                        Text(
+                                          'Mevcut Bakiye',
+                                          style: TextStyle(fontSize: 14, color: Colors.grey[600]),
                                         ),
-                                      ),
-                                    ],
+                                        SizedBox(height: 5),
+                                        Text(
+                                          '${ogrenci.bakiye.toStringAsFixed(2)} TL',
+                                          style: TextStyle(
+                                            fontSize: 36,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.green,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ),
+                                ],
+                              ),
+                              actions: [
+                                TextButton(
+                                  child: Text("Tamam", style: TextStyle(fontSize: 16)),
+                                  onPressed: () {
+                                    Navigator.pop(context);
+                                    _focusNode.requestFocus();
+                                  },
                                 ),
                               ],
                             ),
-                            actions: [
-                              TextButton(
-                                child: Text("Tamam", style: TextStyle(fontSize: 16)),
-                                onPressed: () {
-                                  Navigator.pop(context);
-                                  _focusNode.requestFocus();
-                                },
+                          );
+                        } else {
+                          print("❌ Tanımsız kart: $temizKartID");
+                          showDialog(
+                            context: context,
+                            builder: (context) => AlertDialog(
+                              title: Text(
+                                "Tanımsız Kart",
+                                style: TextStyle(color: Colors.red),
                               ),
-                            ],
-                          ),
-                        );
-                      } else {
-                        print("❌ Tanımsız kart: $temizKartID");
-                        showDialog(
-                          context: context,
-                          builder: (context) => AlertDialog(
-                            title: Text(
-                              "Tanımsız Kart",
-                              style: TextStyle(color: Colors.red),
-                            ),
-                            content: Text(
-                              "Bu kart sisteme kayıtlı değil.\n\nKart ID: $temizKartID",
-                              textAlign: TextAlign.center,
-                            ),
-                            actions: [
-                              TextButton(
-                                child: Text("Tamam"),
-                                onPressed: () {
-                                  Navigator.pop(context);
-                                  _focusNode.requestFocus();
-                                },
+                              content: Text(
+                                "Bu kart sisteme kayıtlı değil.\n\nKart ID: $temizKartID",
+                                textAlign: TextAlign.center,
                               ),
-                            ],
-                          ),
-                        );
+                              actions: [
+                                TextButton(
+                                  child: Text("Tamam"),
+                                  onPressed: () {
+                                    Navigator.pop(context);
+                                    _focusNode.requestFocus();
+                                  },
+                                ),
+                              ],
+                            ),
+                          );
+                        }
                       }
-                    }
-                    _kartOkuyucuController.clear();
-                  },
-                ),
-                SizedBox(
-                  width: 40,
-                  height: 40,
-                  child: CircularProgressIndicator(
-                    color: Colors.green,
-                    strokeWidth: 4,
+                      _kartOkuyucuController.clear();
+                    },
                   ),
-                ),
-              ],
+                  SizedBox(
+                    width: 40,
+                    height: 40,
+                    child: CircularProgressIndicator(
+                      color: Colors.green,
+                      strokeWidth: 4,
+                    ),
+                  ),
+                ],
+              ),
             ),
             actions: [
               TextButton(
@@ -1280,79 +1299,81 @@ class _UrunListesiEkraniState extends State<UrunListesiEkrani> {
               style: TextStyle(color: Colors.indigo, fontWeight: FontWeight.bold),
               textAlign: TextAlign.center,
             ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.credit_card, size: 100, color: Colors.indigo),
-                SizedBox(height: 30),
-                Text(
-                  "Lütfen kartınızı okutun...", 
-                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-                  textAlign: TextAlign.center,
-                ),
-                SizedBox(height: 10),
-                Text(
-                  "Kartınızı kart okuyucuya yaklaştırın",
-                  style: TextStyle(fontSize: 16, color: Colors.grey[600]),
-                  textAlign: TextAlign.center,
-                ),
-                SizedBox(height: 20),
-                Text(
-                  "Ödenecek Tutar:", 
-                  style: TextStyle(fontSize: 16, color: Colors.grey[600]),
-                ),
-                Text(
-                  "${toplamTutar.toStringAsFixed(2)} TL", 
-                  style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.indigo),
-                ),
-                SizedBox(height: 30),
-                // Gizli TextField - sadece kart okuyucu için
-                TextField(
-                  controller: _kartOkuyucuController,
-                  focusNode: _focusNode,
-                  autofocus: true,
-                  style: TextStyle(color: Colors.transparent),
-                  decoration: InputDecoration(
-                    border: InputBorder.none,
-                    counterText: '',
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.credit_card, size: 100, color: Colors.indigo),
+                  SizedBox(height: 30),
+                  Text(
+                    "Lütfen kartınızı okutun...", 
+                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                    textAlign: TextAlign.center,
                   ),
-                  maxLength: 50,
-                  onChanged: (kartID) {
-                    // Kart okuyucu ENTER basmıyor, onChanged kullan
-                    print("🔵 Dialog içinde kart değişti: $kartID (Uzunluk: ${kartID.length})");
-                    if (kartID.trim().length >= 10) {
-                      // Yeterli karakter okundu, işlem yap
-                      Navigator.pop(dialogContext); // Dialog'u kapat
-                      _odemeDialogAcik = false; // Flag temizle
-                      // Dialog kapanma animasyonu tamamlansın diye bekle
-                      Future.delayed(Duration(milliseconds: 300), () {
-                        _kartIsleminiYap(kartID.trim()); // Ödeme işlemini yap
-                      });
+                  SizedBox(height: 10),
+                  Text(
+                    "Kartınızı kart okuyucuya yaklaştırın",
+                    style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+                    textAlign: TextAlign.center,
+                  ),
+                  SizedBox(height: 20),
+                  Text(
+                    "Ödenecek Tutar:", 
+                    style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+                  ),
+                  Text(
+                    "${toplamTutar.toStringAsFixed(2)} TL", 
+                    style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.indigo),
+                  ),
+                  SizedBox(height: 30),
+                  // Gizli TextField - sadece kart okuyucu için
+                  TextField(
+                    controller: _kartOkuyucuController,
+                    focusNode: _focusNode,
+                    autofocus: true,
+                    style: TextStyle(color: Colors.transparent),
+                    decoration: InputDecoration(
+                      border: InputBorder.none,
+                      counterText: '',
+                    ),
+                    maxLength: 50,
+                    onChanged: (kartID) {
+                      // Kart okuyucu ENTER basmıyor, onChanged kullan
+                      print("🔵 Dialog içinde kart değişti: $kartID (Uzunluk: ${kartID.length})");
+                      if (kartID.trim().length >= 10) {
+                        // Yeterli karakter okundu, işlem yap
+                        Navigator.pop(dialogContext); // Dialog'u kapat
+                        _odemeDialogAcik = false; // Flag temizle
+                        // Dialog kapanma animasyonu tamamlansın diye bekle
+                        Future.delayed(Duration(milliseconds: 300), () {
+                          _kartIsleminiYap(kartID.trim()); // Ödeme işlemini yap
+                        });
+                        _kartOkuyucuController.clear();
+                      }
+                    },
+                    onSubmitted: (kartID) {
+                      print("🔵 Dialog içinde kart okundu (ENTER): $kartID");
+                      if (kartID.isNotEmpty) {
+                        Navigator.pop(dialogContext); // Dialog'u kapat
+                        _odemeDialogAcik = false; // Flag temizle
+                        // Dialog kapanma animasyonu tamamlansın diye bekle
+                        Future.delayed(Duration(milliseconds: 300), () {
+                          _kartIsleminiYap(kartID); // Ödeme işlemini yap
+                        });
+                      }
                       _kartOkuyucuController.clear();
-                    }
-                  },
-                  onSubmitted: (kartID) {
-                    print("🔵 Dialog içinde kart okundu (ENTER): $kartID");
-                    if (kartID.isNotEmpty) {
-                      Navigator.pop(dialogContext); // Dialog'u kapat
-                      _odemeDialogAcik = false; // Flag temizle
-                      // Dialog kapanma animasyonu tamamlansın diye bekle
-                      Future.delayed(Duration(milliseconds: 300), () {
-                        _kartIsleminiYap(kartID); // Ödeme işlemini yap
-                      });
-                    }
-                    _kartOkuyucuController.clear();
-                  },
-                ),
-                SizedBox(
-                  width: 40,
-                  height: 40,
-                  child: CircularProgressIndicator(
-                    color: Colors.indigo,
-                    strokeWidth: 4,
+                    },
                   ),
-                ),
-              ],
+                  SizedBox(
+                    width: 40,
+                    height: 40,
+                    child: CircularProgressIndicator(
+                      color: Colors.indigo,
+                      strokeWidth: 4,
+                    ),
+                  ),
+                ],
+              ),
             ),
             actions: [
               TextButton(
@@ -1404,8 +1425,8 @@ class _UrunListesiEkraniState extends State<UrunListesiEkrani> {
       print("🛒 Sepet toplam: $toplamTutar TL");
       
       // Sepet doluysa ödeme yap
-      if (ogrenci.bakiye >= toplamTutar) {
-        print("✅ Yeterli bakiye var, ödeme yapılıyor...");
+      if ((ogrenci.bakiye - toplamTutar) >= -10.0) {
+        print("✅ Yeterli limit var, ödeme yapılıyor...");
         // Başarılı ödeme
         // Timeout ile ödeme yap (offline modda Firebase takılmasın)
         try {
@@ -1437,7 +1458,7 @@ class _UrunListesiEkraniState extends State<UrunListesiEkrani> {
         if (!mounted) return;
         _sonucGoster(
           "Yetersiz Bakiye", 
-          "${ogrenci.adSoyad}\nMevcut Bakiye: ${ogrenci.bakiye.toStringAsFixed(2)} TL\nGerekli: ${toplamTutar.toStringAsFixed(2)} TL", 
+          "${ogrenci.adSoyad}\nMevcut Bakiye: ${ogrenci.bakiye.toStringAsFixed(2)} TL\nGerekli: ${toplamTutar.toStringAsFixed(2)} TL\n(-10 TL limiti aşıldı)", 
           false,
           false // Refresh yapma
         );

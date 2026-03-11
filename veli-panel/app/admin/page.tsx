@@ -19,6 +19,7 @@ export default function AdminDashboardPage() {
         monthlySales: [] as { name: string; value: number }[],
         revenueTrend: [] as { date: string; amount: number }[],
         lowStockProducts: [] as Urun[],
+        negativeBalanceStudents: [] as Ogrenci[],
         allSales: [] as { tarih: string; ogrenci: string; urun: string; adet: number; tutar: number }[],
     });
     const [products, setProducts] = useState<Urun[]>([]);
@@ -144,6 +145,10 @@ export default function AdminDashboardPage() {
                 amount
             }));
 
+            const negativeBalanceStudents = students
+                .filter(s => (s.bakiye || 0) < 0)
+                .sort((a, b) => (a.bakiye || 0) - (b.bakiye || 0));
+
             setStats({
                 totalStudents,
                 totalBalance,
@@ -154,6 +159,7 @@ export default function AdminDashboardPage() {
                 monthlySales: formatData(monthlyProducts),
                 revenueTrend: formattedRevenueTrend,
                 lowStockProducts,
+                negativeBalanceStudents,
                 allSales
             });
             setLoading(false);
@@ -338,6 +344,42 @@ export default function AdminDashboardPage() {
                         </div>
                     </div>
                 )}
+
+                {/* Negative Balance Warning */}
+                {stats.negativeBalanceStudents.length > 0 && (
+                    <div className="mb-10 bg-red-50 border border-red-200 rounded-3xl p-6">
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center">
+                                <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                </svg>
+                            </div>
+                            <div>
+                                <h3 className="text-lg font-bold text-red-800">Eksik Bakiyeli Öğrenciler (0 ₺ Altı)</h3>
+                                <p className="text-sm text-red-600">Bakiyesi eksiye düşmüş olan öğrencilerin listesi.</p>
+                            </div>
+                        </div>
+                        <div className="grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                            {stats.negativeBalanceStudents.map(s => (
+                                <div key={s.kartID} className={`bg-white border rounded-xl p-4 flex flex-col gap-1 ${s.bakiye && s.bakiye <= -10 ? 'border-red-400 shadow-sm' : 'border-red-100'}`}>
+                                    <div className="flex justify-between items-start">
+                                        <p className="text-sm font-semibold text-slate-800 truncate" title={s.adSoyad}>{s.adSoyad}</p>
+                                        {s.bakiye && s.bakiye <= -10 && (
+                                            <span className="px-1.5 py-0.5 bg-red-600 text-white text-[10px] font-bold rounded leading-tight flex items-center h-5">LİMİT DOLDU</span>
+                                        )}
+                                    </div>
+                                    <div className="flex justify-between items-end mt-1">
+                                        <p className="text-xs text-slate-500">{s.sinif || '-'}</p>
+                                        <p className="text-sm font-bold text-red-600">
+                                            {s.bakiye?.toFixed(2).replace('-', '- ')} ₺
+                                        </p>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
 
                 {/* Excel Export Buttons */}
                 <div className="flex flex-wrap gap-4 mb-10">

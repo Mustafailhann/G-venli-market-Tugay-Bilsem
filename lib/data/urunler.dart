@@ -5,7 +5,10 @@ final List<Kategori> kategoriler = [
   Kategori(isim: 'İçecekler', icon: Icons.local_drink, renk: Colors.blue, resimYolu: 'assets/images/beypazarı.png'),
   Kategori(isim: 'Atıştırmalıklar', icon: Icons.cookie, renk: Colors.orange, resimYolu: 'assets/images/ruffles.jpg'),
   Kategori(isim: 'Tatlılar', icon: Icons.cake, renk: Colors.red, resimYolu: 'assets/images/tutku.jpg'),
-  Kategori(isim: 'Gofretter', icon: Icons.fastfood, renk: Colors.brown, resimYolu: 'assets/images/gofret.png'),
+  Kategori(isim: 'Gofretler', icon: Icons.fastfood, renk: Colors.brown, resimYolu: 'assets/images/gofret.png'),
+  Kategori(isim: 'Kekler', icon: Icons.breakfast_dining, renk: Colors.yellow, resimYolu: 'assets/images/tutku.jpg'),
+  Kategori(isim: 'Krakerler', icon: Icons.bakery_dining, renk: Colors.orangeAccent, resimYolu: 'assets/images/çizi cips.png'),
+  Kategori(isim: 'Çikolatalar', icon: Icons.icecream, renk: Colors.brown, resimYolu: 'assets/images/biskrem.png'),
 ];
 
 final List<Urun> urunler = [
