@@ -7,6 +7,9 @@ import AnalyticsCharts from '@/components/admin/AnalyticsCharts';
 import { Ogrenci, Urun, isHarcama } from '@/types';
 import { Timestamp } from 'firebase/firestore';
 import * as XLSX from 'xlsx';
+import { auth, db } from '@/lib/firebase';
+import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
+import { onAuthStateChanged } from 'firebase/auth';
 
 export default function AdminDashboardPage() {
     const [stats, setStats] = useState({
@@ -24,6 +27,7 @@ export default function AdminDashboardPage() {
     });
     const [products, setProducts] = useState<Urun[]>([]);
     const [loading, setLoading] = useState(true);
+    const [adminInfo, setAdminInfo] = useState<{ adSoyad: string; unvan?: string } | null>(null);
 
     // Date formatting helper
     const currentDate = new Date().toLocaleDateString('tr-TR', {
@@ -32,6 +36,34 @@ export default function AdminDashboardPage() {
         month: 'long',
         day: 'numeric'
     });
+
+    useEffect(() => {
+        // Giriş yapan adminin bilgilerini çek
+        const unsubscribe = onAuthStateChanged(auth, async (user) => {
+            if (!user) return;
+            try {
+                // Önce UID ile dene
+                const directRef = doc(db, 'veliler', user.uid);
+                const directSnap = await getDoc(directRef);
+                if (directSnap.exists()) {
+                    const data = directSnap.data();
+                    setAdminInfo({ adSoyad: data.adSoyad || '', unvan: data.unvan });
+                    return;
+                }
+                // Email'den telefon numarasını çıkar ve ara
+                if (user.email) {
+                    const phone = user.email.split('@')[0];
+                    const q = query(collection(db, 'veliler'), where('telefonNo', '==', phone));
+                    const snap = await getDocs(q);
+                    if (!snap.empty) {
+                        const data = snap.docs[0].data();
+                        setAdminInfo({ adSoyad: data.adSoyad || '', unvan: data.unvan });
+                    }
+                }
+            } catch (e) { /* sessizce geç */ }
+        });
+        return () => unsubscribe();
+    }, []);
 
     useEffect(() => {
         const fetchData = async () => {
@@ -217,7 +249,13 @@ export default function AdminDashboardPage() {
                     <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
                         <div>
                             <h1 className="text-3xl font-bold text-slate-900 tracking-tight">TUGAY BİLSEM ADMIN PANELİ</h1>
-                            <p className="text-slate-500 mt-2 text-lg">Hoş geldiniz, sistem durumu stabil.</p>
+                            <p className="text-slate-500 mt-2 text-lg">
+                                {adminInfo?.adSoyad
+                                    ? adminInfo.unvan
+                                        ? `Sayın ${adminInfo.unvan}ım ${adminInfo.adSoyad}, hoş geldiniz.`
+                                        : `Hoş geldiniz, ${adminInfo.adSoyad}.`
+                                    : 'Hoş geldiniz, sistem durumu stabil.'}
+                            </p>
                         </div>
                         <div className="text-right hidden md:block">
                             <p className="text-sm font-semibold text-indigo-600 bg-indigo-50 px-4 py-2 rounded-xl inline-block shadow-sm">

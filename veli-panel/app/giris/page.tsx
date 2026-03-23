@@ -109,7 +109,8 @@ export default function GirisPage() {
                 }
 
                 // Yönlendirme (Temiz telefon numarası kullanılıyor)
-                const isAdmin = veliData?.role === 'admin' || temizTelefon === '5550000000';
+                const adminPhones = ['5550000000', '5056310572', '5054079537'];
+                const isAdmin = veliData?.role === 'admin' || adminPhones.includes(temizTelefon);
 
                 // Eğer 5550 ile girip henüz role=admin almamışsa veritabanını güncelleyelim
                 if (isAdmin && veliData && veliData.role !== 'admin') {

@@ -12,6 +12,7 @@ export interface Veli {
     aktif: boolean;
     sifreDegistirmeZorunlu?: boolean; // New: Forced password change
     role?: 'admin' | 'veli'; // Yöneticileri belirlemek için rol eklendi
+    unvan?: string; // Örn: 'Müdür', 'Müdür Yardımcısı'
 }
 
 export interface CocukTalebi {
