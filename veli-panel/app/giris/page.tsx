@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { signIn, formatPhoneEmail, signUp } from '@/lib/auth';
 import { getCurrentVeli } from '@/lib/firestore';
+import { updateDoc, doc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 
 export default function GirisPage() {
     const router = useRouter();
@@ -18,22 +20,27 @@ export default function GirisPage() {
     const formatPhoneNumber = (value: string) => {
         if (!value) return value;
         const phoneNumber = value.replace(/[^\d]/g, '');
-        const phoneNumberLength = phoneNumber.length;
-        if (phoneNumberLength < 4) return phoneNumber;
-        if (phoneNumberLength < 7) {
-            return `${phoneNumber.slice(0, 3)} ${phoneNumber.slice(3)}`;
-        }
-        if (phoneNumberLength < 9) {
-            return `${phoneNumber.slice(0, 3)} ${phoneNumber.slice(3, 6)} ${phoneNumber.slice(6)}`;
-        }
+        const len = phoneNumber.length;
+        if (len < 4) return phoneNumber;
+        if (len < 7) return `${phoneNumber.slice(0, 3)} ${phoneNumber.slice(3)}`;
+        if (len < 9) return `${phoneNumber.slice(0, 3)} ${phoneNumber.slice(3, 6)} ${phoneNumber.slice(6)}`;
         return `${phoneNumber.slice(0, 3)} ${phoneNumber.slice(3, 6)} ${phoneNumber.slice(6, 8)} ${phoneNumber.slice(8, 10)}`;
     };
 
     const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const formatted = formatPhoneNumber(e.target.value);
-        if (formatted.length <= 13) {
-            setTelefon(formatted);
+        let val = e.target.value;
+        // Kullanıcı 0 ile başlarsa anında sil
+        if (val.startsWith('0')) {
+            val = val.substring(1);
         }
+        // Sadece rakamlara izin ver
+        val = val.replace(/[^\d]/g, '');
+        
+        if (val.length > 10) {
+            val = val.slice(0, 10);
+        }
+        
+        setTelefon(formatPhoneNumber(val));
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -102,7 +109,18 @@ export default function GirisPage() {
                 }
 
                 // Yönlendirme (Temiz telefon numarası kullanılıyor)
-                if (temizTelefon === '5550000000') {
+                const isAdmin = veliData?.role === 'admin' || temizTelefon === '5550000000';
+
+                // Eğer 5550 ile girip henüz role=admin almamışsa veritabanını güncelleyelim
+                if (isAdmin && veliData && veliData.role !== 'admin') {
+                    try {
+                        await updateDoc(doc(db, 'veliler', veliData.veliID), { role: 'admin' });
+                    } catch (e) {
+                        console.error('Role güncellenemedi:', e);
+                    }
+                }
+
+                if (isAdmin) {
                     router.push('/admin');
                 } else {
                     router.push('/dashboard');
@@ -161,16 +179,20 @@ export default function GirisPage() {
 
                     {/* Giriş Formu */}
                     <form onSubmit={handleSubmit} className="space-y-6">
-                        <div>
-                            <label className="block text-sm font-semibold text-slate-700 mb-2 ml-1">
+                        <div className="mb-2">
+                            <label className="block text-sm font-semibold text-slate-700 mb-1 ml-1">
                                 Telefon Numarası
                             </label>
+                            <p className="text-xs text-blue-600 mb-2 ml-1">
+                                Başında sıfır (0) olmadan giriniz (Örn: 5XX...)
+                            </p>
                             <div className="relative">
                                 <input
                                     type="tel"
                                     value={telefon}
                                     onChange={handlePhoneChange}
-                                    placeholder="555 123 45 67"
+                                    placeholder="5XX 123 45 67"
+                                    maxLength={13}
                                     required
                                     className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-medium text-slate-900 placeholder:text-slate-400"
                                 />

@@ -11,6 +11,7 @@ export interface Veli {
     kayitTarihi: Timestamp;
     aktif: boolean;
     sifreDegistirmeZorunlu?: boolean; // New: Forced password change
+    role?: 'admin' | 'veli'; // Yöneticileri belirlemek için rol eklendi
 }
 
 export interface CocukTalebi {

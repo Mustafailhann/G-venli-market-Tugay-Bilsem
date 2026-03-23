@@ -16,6 +16,17 @@ class Urun {
     required this.kategori,
     this.stok = 0,
   });
+
+  factory Urun.fromFirestore(Map<String, dynamic> data, String documentId) {
+    return Urun(
+      id: documentId,
+      isim: data['ad'] ?? '',
+      fiyat: (data['fiyat'] ?? 0).toDouble(),
+      resimYolu: data['resimURL'] ?? '',
+      kategori: data['kategori'] ?? 'Diğer',
+      stok: data['stok'] ?? 0,
+    );
+  }
 }
 
 class SepetItem {

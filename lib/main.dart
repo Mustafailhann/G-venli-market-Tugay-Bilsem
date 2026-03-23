@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'firebase_options.dart';
 
 // Model imports
@@ -22,6 +23,10 @@ import 'data/urunler.dart' as Data;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // KIOSK MODU - Cihazın navigasyon barını ve üst statüs çubuğunu gizler
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+  
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
@@ -505,6 +510,24 @@ class _UrunListesiEkraniState extends State<UrunListesiEkrani> {
     // Kart okuyucu listener - Her zaman aktif
     _kartOkuyucuController.addListener(() {
       String metin = _kartOkuyucuController.text.trim();
+      
+      if (metin.isEmpty) return;
+      
+      // Kart ID'yi temizle (ardışık tekrarları kaldır)
+      String temizKartID = '';
+      for (int i = 0; i < metin.length; i++) {
+        if (i == 0 || metin[i] != metin[i - 1]) {
+          temizKartID += metin[i];
+        }
+      }
+
+      // 🔴 ADMIN ÇIKIŞ KARTI KONTROLÜ (EN BAŞTA)
+      if (temizKartID == VeriYoneticisi().adminCikisKarti || metin == VeriYoneticisi().adminCikisKarti) {
+        print("🔴 ADMİN ÇIKIŞ KARTI OKUTULDU - Anında kapatılıyor...");
+        SystemNavigator.pop();
+        return;
+      }
+
       print('🔍 KART OKUYUCU: "${metin}" (Uzunluk: ${metin.length})');
       print('📝 HAM VERİ: "${_kartOkuyucuController.text}"');
       
@@ -1182,19 +1205,16 @@ class _UrunListesiEkraniState extends State<UrunListesiEkrani> {
                               width: 50,
                               height: 50,
                               child: sepetOgesi.urun.resimYolu.startsWith('http') 
-                                ? Image.network(
-                                    sepetOgesi.urun.resimYolu,
+                                ? CachedNetworkImage(
+                                    imageUrl: sepetOgesi.urun.resimYolu,
                                     fit: BoxFit.contain,
-                                    errorBuilder: (context, error, stackTrace) {
-                                      return Icon(Icons.image_not_supported, color: Colors.grey);
-                                    },
+                                    placeholder: (context, url) => Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))),
+                                    errorWidget: (context, url, error) => Icon(Icons.image_not_supported, color: Colors.grey),
                                   )
                                 : Image.asset(
-                                    sepetOgesi.urun.resimYolu,
+                                    sepetOgesi.urun.resimYolu.isNotEmpty ? sepetOgesi.urun.resimYolu : 'assets/images/beypazarı.png',
                                     fit: BoxFit.contain,
-                                    errorBuilder: (context, error, stackTrace) {
-                                      return Icon(Icons.image_not_supported, color: Colors.grey);
-                                    },
+                                    errorBuilder: (context, error, stackTrace) => Icon(Icons.image_not_supported, color: Colors.grey),
                                   ),
                             ),
                             title: Text(
@@ -1841,9 +1861,25 @@ class _UrunListesiEkraniState extends State<UrunListesiEkrani> {
           Column(
             children: [
               Expanded(
-                child: secilenKategori == null 
-                  ? _kategoriGrid() 
-                  : _urunGrid(),
+                child: !_verilerYuklendi 
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          CircularProgressIndicator(color: Colors.indigo, strokeWidth: 5),
+                          SizedBox(height: 16),
+                          Text("Ürünler Yükleniyor...", style: TextStyle(color: Colors.indigo, fontSize: 18, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                    )
+                  : AnimatedBuilder(
+                      animation: VeriYoneticisi(),
+                      builder: (context, child) {
+                        return secilenKategori == null 
+                          ? _kategoriGrid() 
+                          : _urunGrid();
+                      },
+                    ),
               ),
               Container(
                 padding: EdgeInsets.symmetric(vertical: 15.0, horizontal: 20.0),
@@ -2006,19 +2042,18 @@ class UrunKarti extends StatelessWidget {
                 child: Padding(
                   padding: const EdgeInsets.all(8.0),
                   child: urun.resimYolu.startsWith('http')
-                    ? Image.network(
-                        urun.resimYolu,
+                    ? CachedNetworkImage(
+                        imageUrl: urun.resimYolu,
                         fit: BoxFit.contain,
-                        errorBuilder: (context, error, stackTrace) {
-                          return Icon(
-                            Icons.image_not_supported,
-                            size: 60,
-                            color: Colors.grey[300],
-                          );
-                        },
+                        placeholder: (context, url) => Center(child: CircularProgressIndicator(color: Colors.indigo)),
+                        errorWidget: (context, url, error) => Icon(
+                          Icons.image_not_supported,
+                          size: 60,
+                          color: Colors.grey[300],
+                        ),
                       )
                     : Image.asset(
-                        urun.resimYolu,
+                        urun.resimYolu.isNotEmpty ? urun.resimYolu : 'assets/images/beypazarı.png',
                         fit: BoxFit.contain,
                         errorBuilder: (context, error, stackTrace) {
                           return Icon(

@@ -8,7 +8,7 @@ plugins {
 
 android {
     namespace = "com.example.okul_otomat_hibrit"
-    compileSdk = 34
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {

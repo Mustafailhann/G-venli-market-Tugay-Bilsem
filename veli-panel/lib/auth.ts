@@ -7,6 +7,7 @@ import {
     updatePassword,
     EmailAuthProvider,
     reauthenticateWithCredential,
+    updateEmail,
     User
 } from 'firebase/auth';
 import {
@@ -136,6 +137,56 @@ export async function changeUserPassword(newPassword: string, oldPassword?: stri
         return { success: true };
     } catch (error: any) {
         console.error('Password change error:', error);
+        return { success: false, error: error.message };
+    }
+}
+
+export async function changeAdminSettings(currentPassword: string, newPhone?: string, newPassword?: string) {
+    const user = auth.currentUser;
+    if (!user || !user.email) return { success: false, error: 'Kullanıcı oturumu bulunamadı.' };
+
+    try {
+        // 1. Re-authenticate
+        const credential = EmailAuthProvider.credential(user.email, currentPassword);
+        await reauthenticateWithCredential(user, credential);
+
+        // 2. Change password if requested
+        if (newPassword && newPassword.length >= 6) {
+            await updatePassword(user, newPassword);
+        }
+
+        // 3. Change email & phone if requested
+        if (newPhone && newPhone.length >= 10) {
+            const cleanPhone = newPhone.replace(/[^\d]/g, '');
+            const newEmail = formatPhoneEmail(cleanPhone);
+            await updateEmail(user, newEmail);
+            
+            // Update Firestore
+            const veli = await getCurrentVeli(user);
+            if (veli) {
+                await setDoc(doc(db, 'veliler', veli.veliID), {
+                    telefonNo: cleanPhone
+                }, { merge: true });
+            } else {
+                await setDoc(doc(db, 'veliler', user.uid), {
+                    telefonNo: cleanPhone,
+                    role: 'admin' // Ensure they don't lose admin context if newly merged
+                }, { merge: true });
+            }
+        }
+
+        return { success: true };
+    } catch (error: any) {
+        console.error('Settings change error:', error);
+        if (error.code === 'auth/invalid-credential') {
+            return { success: false, error: 'Mevcut şifrenizi yanlış girdiniz. Lütfen tekrar deneyin.' };
+        }
+        if (error.code === 'auth/requires-recent-login') {
+            return { success: false, error: 'Güvenlik için lütfen çıkış yapıp tekrar giriş yaptıktan sonra deneyiniz.' };
+        }
+        if (error.code === 'auth/email-already-in-use') {
+            return { success: false, error: 'Bu telefon numarası zaten kullanımda.' };
+        }
         return { success: false, error: error.message };
     }
 }

@@ -14,8 +14,8 @@ class VeriYoneticisi extends ChangeNotifier {
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  // ÖZEL ADMIN KARTI
-  final String adminCikisKarti = '3539442829';
+  // ÖZEL ADMIN KARTI (UYGULAMAYI KAPATIR)
+  final String adminCikisKarti = '1216838362';
 
   // Öğrenci verileri
   final Map<String, Ogrenci> ogrenciler = {};
