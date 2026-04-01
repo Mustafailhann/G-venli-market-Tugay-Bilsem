@@ -1,5 +1,6 @@
 class Ogrenci {
-  String kartID;
+  String kartID;   // Karttan okunan ID (veya doc.id)
+  String docID;   // Firestore döküman ID'si (her zaman doc.id)
   String adSoyad;
   String sinif;
   double bakiye;
@@ -7,11 +8,13 @@ class Ogrenci {
 
   Ogrenci({
     required this.kartID,
+    String? docID,
     required this.adSoyad,
     required this.sinif,
     this.bakiye = 0.0,
     List<Islem>? islemGecmisi,
-  }) : islemGecmisi = islemGecmisi ?? [];
+  }) : docID = docID ?? kartID,
+       islemGecmisi = islemGecmisi ?? [];
 }
 
 class Islem {

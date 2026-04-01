@@ -88,13 +88,24 @@ class VeriYoneticisi extends ChangeNotifier {
               );
             }).toList() ?? [];
 
-            ogrenciler[doc.id] = Ogrenci(
+            final ogrenci = Ogrenci(
               kartID: doc.id,
               adSoyad: data['adSoyad'],
               sinif: data['sinif'],
               bakiye: (data['bakiye'] as num).toDouble(),
               islemGecmisi: islemler,
             );
+
+            // Döküman ID'siyle kaydet (her zaman)
+            ogrenciler[doc.id] = ogrenci;
+
+            // Eğer ayrıca bir kartID alanı varsa ve doc.id'den farklıysa,
+            // onu da ekle — admin panelinden girilen kart numarasıyla eşleşsin
+            final kartIDAlani = data['kartID']?.toString();
+            if (kartIDAlani != null && kartIDAlani.isNotEmpty && kartIDAlani != doc.id) {
+              ogrenciler[kartIDAlani] = ogrenci;
+              print('🔗 Kart eşleşmesi: $kartIDAlani → ${ogrenci.adSoyad}');
+            }
           }
           print('✅ ${snapshot.docs.length} öğrenci güncellendi (Stream)');
           notifyListeners();
@@ -196,8 +207,12 @@ class VeriYoneticisi extends ChangeNotifier {
       
       await _ogrencileriOfflineKaydet();
 
+
+      // Firestore güncellemesi için her zaman docID kullan
+      final docID = ogrenciler[kartID]!.docID;
+
       try {
-        await _firestore.collection('ogrenciler').doc(kartID).update({
+        await _firestore.collection('ogrenciler').doc(docID).update({
           'bakiye': ogrenciler[kartID]!.bakiye,
           'islemGecmisi': FieldValue.arrayUnion([{
             'tarih': Timestamp.fromDate(yeniIslem.tarih),
@@ -206,12 +221,12 @@ class VeriYoneticisi extends ChangeNotifier {
             'aciklama': yeniIslem.aciklama,
           }]),
         }).timeout(Duration(seconds: 2));
-        print('✅ Bakiye Firestore\'a kaydedildi: $kartID - $miktar TL');
+        print('✅ Bakiye Firestore\'a kaydedildi: $docID - $miktar TL');
       } catch (e) {
         print('⚠️ İnternet yok - Offline kaydedildi: $e');
         await _offlineIslemEkle({
           'tip': 'bakiye_yukleme',
-          'kartID': kartID,
+          'kartID': docID,
           'tutar': miktar,
           'yeniBakiye': ogrenciler[kartID]!.bakiye,
           'tarih': yeniIslem.tarih.toIso8601String(),
@@ -222,9 +237,12 @@ class VeriYoneticisi extends ChangeNotifier {
     }
   }
 
+
   Future<bool> odemeYap(String kartID, double tutar, List<SepetItem> sepet) async {
     try {
-      final docRef = _firestore.collection('ogrenciler').doc(kartID);
+      // Firestore güncellemesi için her zaman docID kullan
+      final docID = ogrenciler[kartID]?.docID ?? kartID;
+      final docRef = _firestore.collection('ogrenciler').doc(docID);
       
       // Satılan ürünlerin isimleri ve stok güncellemeleri
       WriteBatch batch = _firestore.batch();

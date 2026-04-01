@@ -182,6 +182,31 @@ export async function addStudentBalance(studentId: string, amount: number) {
     }
 }
 
+export async function setStudentBalance(studentId: string, newBalance: number, oldBalance: number) {
+    try {
+        const studentRef = doc(db, 'ogrenciler', studentId);
+        const diff = newBalance - oldBalance;
+
+        const newTransaction: Islem = {
+            tarih: Timestamp.now(),
+            tip: 'Bakiye Yükleme',
+            tutar: diff,
+            aciklama: `Admin bakiye düzeltmesi: ${oldBalance.toFixed(2)} ₺ → ${newBalance.toFixed(2)} ₺`,
+            urunler: []
+        };
+
+        await updateDoc(studentRef, {
+            bakiye: newBalance,
+            islemGecmisi: arrayUnion(newTransaction)
+        });
+
+        return { success: true };
+    } catch (error: any) {
+        console.error("Error setting balance:", error);
+        return { success: false, error: error.message };
+    }
+}
+
 export async function getAllParents() {
     try {
         const q = query(collection(db, 'veliler'));

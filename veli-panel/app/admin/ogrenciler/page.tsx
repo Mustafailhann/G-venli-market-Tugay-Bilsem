@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { getAllStudents, addStudentBalance, adminAddStudent, updateStudent, deleteStudent, uploadStudentPhoto, updateStudentWithParents, getParentsByIds } from '@/lib/admin';
+import { getAllStudents, addStudentBalance, setStudentBalance, adminAddStudent, updateStudent, deleteStudent, uploadStudentPhoto, updateStudentWithParents, getParentsByIds } from '@/lib/admin';
 import { useRouter } from 'next/navigation';
 import { Ogrenci, Veli } from '@/types';
 import BalanceModal from '@/components/admin/BalanceModal';
@@ -55,7 +55,19 @@ export default function StudentsPage() {
         const result = await addStudentBalance(selectedStudent.id, amount);
         if (result.success) {
             alert('Bakiye başarıyla yüklendi.');
-            fetchStudents(); // Refresh list to show new balance
+            fetchStudents();
+        } else {
+            alert('Hata: ' + result.error);
+        }
+    };
+
+    const confirmSetBalance = async (newBalance: number) => {
+        if (!selectedStudent) return;
+
+        const result = await setStudentBalance(selectedStudent.id, newBalance, selectedStudent.bakiye || 0);
+        if (result.success) {
+            alert('Bakiye başarıyla güncellendi.');
+            fetchStudents();
         } else {
             alert('Hata: ' + result.error);
         }
@@ -257,7 +269,9 @@ export default function StudentsPage() {
                 isOpen={isBalanceModalOpen}
                 onClose={() => setIsBalanceModalOpen(false)}
                 onConfirm={confirmAddBalance}
+                onSetBalance={confirmSetBalance}
                 studentName={selectedStudent?.adSoyad || ''}
+                currentBalance={selectedStudent?.bakiye ?? 0}
             />
 
             <StudentModal
