@@ -337,6 +337,85 @@ export async function getParentsByIds(veliIDleri: string[]): Promise<Veli[]> {
     }
 }
 
+// --- Bulk Card ID Update ---
+
+function normalizeName(name: string): string {
+    if (!name) return '';
+    return name
+        .toLocaleLowerCase('tr-TR') // Türkçe küçük harfe çevir
+        .replace(/ğ/g, 'g')
+        .replace(/ü/g, 'u')
+        .replace(/ş/g, 's')
+        .replace(/ı/g, 'i')
+        .replace(/ö/g, 'o')
+        .replace(/ç/g, 'c')
+        .replace(/â/g, 'a')
+        .replace(/î/g, 'i')
+        .replace(/û/g, 'u')
+        .replace(/[^a-z0-9]/g, '') // Boşlukları ve özel karakterleri tamamen sil
+        .trim();
+}
+
+export async function bulkUpdateCardIds(
+    updates: { adSoyad: string; kartID: string }[]
+): Promise<{ success: boolean; updated: number; notFound: string[]; errors: string[] }> {
+    const notFound: string[] = [];
+    const errors: string[] = [];
+    let updated = 0;
+
+    try {
+        // Fetch all students once
+        const q = query(collection(db, 'ogrenciler'));
+        const snapshot = await getDocs(q);
+
+        // Build a name → docID map (normalize using robust function)
+        const nameToDocId = new Map<string, string>();
+        snapshot.forEach((docSnap) => {
+            const data = docSnap.data();
+            const normalizedName = normalizeName(data.adSoyad);
+            if (normalizedName) {
+                nameToDocId.set(normalizedName, docSnap.id);
+            }
+        });
+
+        // Process in batches of 400 (Firestore batch limit is 500)
+        const BATCH_SIZE = 400;
+        for (let i = 0; i < updates.length; i += BATCH_SIZE) {
+            const chunk = updates.slice(i, i + BATCH_SIZE);
+            const batch = writeBatch(db);
+            let batchHasOp = false;
+
+            for (const { adSoyad, kartID } of chunk) {
+                const normalizedName = normalizeName(adSoyad);
+                const docId = nameToDocId.get(normalizedName);
+
+                if (!docId) {
+                    notFound.push(adSoyad);
+                    continue;
+                }
+
+                try {
+                    const studentRef = doc(db, 'ogrenciler', docId);
+                    batch.update(studentRef, { kartID });
+                    updated++;
+                    batchHasOp = true;
+                } catch (e: any) {
+                    errors.push(`${adSoyad}: ${e.message}`);
+                }
+            }
+
+            if (batchHasOp) {
+                await batch.commit();
+            }
+        }
+
+        return { success: true, updated, notFound, errors };
+    } catch (error: any) {
+        console.error('bulkUpdateCardIds error:', error);
+        return { success: false, updated, notFound, errors: [error.message] };
+    }
+}
+
 // --- Update Student with Parents ---
 
 export async function updateStudentWithParents(
