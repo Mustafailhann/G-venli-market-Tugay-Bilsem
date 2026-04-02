@@ -1,14 +1,13 @@
 'use client';
 
 import { useState, useRef } from 'react';
-import { adminAddStudent } from '@/lib/admin';
+import { bulkUpsertStudents } from '@/lib/admin';
 import * as XLSX from 'xlsx';
 
 export default function ImportPage() {
     const [data, setData] = useState<any[]>([]);
     const [loading, setLoading] = useState(false);
     const [importing, setImporting] = useState(false);
-    const [progress, setProgress] = useState({ current: 0, total: 0, success: 0, fail: 0 });
     const [logs, setLogs] = useState<string[]>([]);
     const [fileName, setFileName] = useState('');
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -21,7 +20,6 @@ export default function ImportPage() {
         setLoading(true);
         setData([]);
         setLogs([]);
-        setProgress({ current: 0, total: 0, success: 0, fail: 0 });
 
         const reader = new FileReader();
         reader.onload = (event) => {
@@ -30,11 +28,11 @@ export default function ImportPage() {
                 const workbook = XLSX.read(arrayBuffer, { type: 'array' });
                 const sheetName = workbook.SheetNames[0];
                 const worksheet = workbook.Sheets[sheetName];
-                const jsonData = XLSX.utils.sheet_to_json(worksheet);
+                const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
                 setData(jsonData);
-                setLogs(prev => [...prev, `✓ "${file.name}" başarıyla okundu. ${jsonData.length} kayıt bulundu.`]);
+                setLogs([`✓ "${file.name}" başarıyla okundu. ${jsonData.length} kayıt bulundu.`]);
             } catch (err: any) {
-                setLogs(prev => [...prev, `✗ Dosya okunamadı: ${err.message}`]);
+                setLogs([`✗ Dosya okunamadı: ${err.message}`]);
             } finally {
                 setLoading(false);
             }
@@ -46,7 +44,6 @@ export default function ImportPage() {
         e.preventDefault();
         const file = e.dataTransfer.files?.[0];
         if (!file) return;
-        // Simulate file input
         const dt = new DataTransfer();
         dt.items.add(file);
         if (fileInputRef.current) {
@@ -56,81 +53,73 @@ export default function ImportPage() {
     };
 
     const startImport = async () => {
-        if (!confirm(`${data.length} kayıt sisteme eklenecek. Devam etmek istiyor musunuz?`)) return;
+        if (!window.confirm(`${data.length} kayıt sisteme eklenecek veya güncellenecek. Devam etmek istiyor musunuz?`)) return;
 
         setImporting(true);
-        setProgress({ current: 0, total: data.length, success: 0, fail: 0 });
-        setLogs([`İçe aktarma başlatıldı...`]);
+        setLogs([`Veriler işleniyor, lütfen bekleyin...`]);
 
-        let successCount = 0;
-        let failCount = 0;
-
-        for (let i = 0; i < data.length; i++) {
-            const row = data[i];
-            setProgress(prev => ({ ...prev, current: i + 1 }));
-
-            try {
-                const studentName = row['Öğrencinin Adı Soyadı'];
-                const cardID = row['Öğrencinin T.C. Kimlik Numarası']?.toString();
-                const className = row['Öğrencinin Sınıfı'];
-
-                const parents = [];
-
-                if (row['Öğrencinin Baba Cep Telefonu']) {
-                    parents.push({
-                        name: row['Öğrencinin Baba Adı'] || 'Baba',
-                        phone: row['Öğrencinin Baba Cep Telefonu'].toString().replace(/\D/g, '')
-                    });
+        const parsedStudents = data.map((row, index) => {
+            // Dinamik Sütun Eşleştirici
+            const getVal = (possibleKeys: string[]) => {
+                for (const k of possibleKeys) {
+                    if (row[k] !== undefined && row[k] !== '') {
+                        return String(row[k]).trim();
+                    }
                 }
+                return '';
+            };
 
-                if (row['Öğrencinin Anne Cep Telefonu']) {
-                    parents.push({
-                        name: row['Öğrencinin Anne Adı'] || 'Anne',
-                        phone: row['Öğrencinin Anne Cep Telefonu'].toString().replace(/\D/g, '')
-                    });
-                }
+            const studentName = getVal(['İSİM', 'Öğrencinin Adı Soyadı', 'AD SOYAD', 'ADSOYAD']);
+            const cardID = getVal(['KANTİN KART NUMARASI', 'Öğrencinin T.C. Kimlik Numarası', 'KART ID', 'KART NUMARASI']);
+            const className = getVal(['SINIF', 'Öğrencinin Sınıfı', 'Sınıf']);
+            const babaAd = getVal(['BABA ADI', 'Öğrencinin Baba Adı']);
+            const babaTel = getVal(['BABA TELEFON', 'Öğrencinin Baba Cep Telefonu']);
+            const anneAd = getVal(['ANNE ADI', 'Öğrencinin Anne Adı']);
+            const anneTel = getVal(['ANNE TELEFON', 'Öğrencinin Anne Cep Telefonu']);
 
-                if (!studentName || !cardID) {
-                    setLogs(prev => [...prev, `⚠ Satır ${i + 1}: İsim veya TC eksik, atlandı.`]);
-                    failCount++;
-                    continue;
-                }
+            const parents = [];
+            if (babaTel) parents.push({ name: babaAd || 'Baba', phone: babaTel });
+            if (anneTel) parents.push({ name: anneAd || 'Anne', phone: anneTel });
 
-                const result = await adminAddStudent({
-                    adSoyad: studentName,
-                    kartID: cardID,
-                    sinif: className || 'Belirsiz',
-                    bakiye: 0,
-                    islemGecmisi: []
-                }, parents);
+            return {
+                adSoyad: studentName,
+                kartID: cardID,
+                sinif: className || 'Belirsiz',
+                parents
+            };
+        }).filter(s => s.adSoyad && s.adSoyad.trim().length > 0);
 
-                if (result.success) {
-                    successCount++;
-                } else {
-                    setLogs(prev => [...prev, `✗ Satır ${i + 1} (${studentName}): ${result.error}`]);
-                    failCount++;
-                }
-            } catch (err: any) {
-                setLogs(prev => [...prev, `✗ Satır ${i + 1}: ${err.message}`]);
-                failCount++;
-            }
-
-            if (i % 5 === 0) await new Promise(r => setTimeout(r, 10));
+        if (parsedStudents.length === 0) {
+            setLogs(prev => [...prev, `✗ Geçerli hiçbir kayıt bulunamadı. Lütfen Excel sütun başlıklarını kontrol edin.`]);
+            setImporting(false);
+            return;
         }
 
-        setProgress(prev => ({ ...prev, success: successCount, fail: failCount }));
-        setImporting(false);
-        setLogs(prev => [...prev, `\n✓ İşlem tamamlandı! Başarılı: ${successCount}, Hatalı: ${failCount}`]);
-        alert(`İşlem Tamamlandı!\nBaşarılı: ${successCount}\nHatalı: ${failCount}`);
+        try {
+            const result = await bulkUpsertStudents(parsedStudents);
+            if (result.success) {
+                setLogs(prev => [
+                    ...prev, 
+                    `✓ İşlem tamamlandı!`,
+                    `✦ Eklenen Yeni Öğrenci: ${result.inserted}`,
+                    `✦ Güncellenen Eski Öğrenci: ${result.updated}`,
+                    ...(result.errors.length > 0 ? ['⚠ Hatalar:', ...result.errors] : [])
+                ]);
+            } else {
+                setLogs(prev => [...prev, `✗ İşlem başarısız oldu. Hatalar:`, ...result.errors]);
+            }
+        } catch (err: any) {
+            setLogs(prev => [...prev, `✗ Beklenmeyen Hata: ${err.message}`]);
+        } finally {
+            setImporting(false);
+        }
     };
-
-    const progressPercent = progress.total > 0 ? Math.round((progress.current / progress.total) * 100) : 0;
 
     return (
         <div className="container-custom py-8 px-8 max-w-7xl">
             <div className="mb-8">
-                <h1 className="text-2xl font-bold text-gray-900">Veri İçe Aktarma (Excel)</h1>
-                <p className="text-gray-500 mt-1">Excel dosyasından öğrenci ve veli bilgilerini sisteme aktarın</p>
+                <h1 className="text-2xl font-bold text-gray-900">Öğrenci Veritabanını Güncelle / İçe Aktar (Excel)</h1>
+                <p className="text-gray-500 mt-1">Excel dosyasından öğrenci ve veli bilgilerini sisteme aktarın veya mevcutları güncelleyin</p>
             </div>
 
             {/* Upload Area */}
@@ -227,7 +216,6 @@ export default function ImportPage() {
                                         setData([]);
                                         setFileName('');
                                         setLogs([]);
-                                        setProgress({ current: 0, total: 0, success: 0, fail: 0 });
                                         if (fileInputRef.current) fileInputRef.current.value = '';
                                     }}
                                     className="text-sm text-gray-500 hover:text-gray-700 px-4 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors"
@@ -242,7 +230,7 @@ export default function ImportPage() {
                                     {importing ? (
                                         <>
                                             <div className="animate-spin w-4 h-4 border-2 border-white/30 border-t-white rounded-full"></div>
-                                            İşleniyor... {progressPercent}%
+                                            İşleniyor...
                                         </>
                                     ) : (
                                         <>
@@ -256,24 +244,7 @@ export default function ImportPage() {
                             </div>
                         </div>
 
-                        {/* Progress Bar */}
-                        {importing && (
-                            <div className="mt-4">
-                                <div className="flex items-center justify-between text-xs text-gray-500 mb-1.5">
-                                    <span>{progress.current} / {progress.total} işlendi</span>
-                                    <span className="flex items-center gap-3">
-                                        <span className="text-green-600">✓ {progress.success}</span>
-                                        <span className="text-red-500">✗ {progress.fail}</span>
-                                    </span>
-                                </div>
-                                <div className="w-full bg-gray-100 rounded-full h-2">
-                                    <div
-                                        className="bg-indigo-600 h-2 rounded-full transition-all duration-300 ease-out"
-                                        style={{ width: `${progressPercent}%` }}
-                                    ></div>
-                                </div>
-                            </div>
-                        )}
+                        {/* Progress Bar removed since bulk update is single call */}
                     </div>
 
                     {/* Table */}
@@ -282,32 +253,31 @@ export default function ImportPage() {
                             <thead className="bg-gray-50 sticky top-0 z-10">
                                 <tr>
                                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">#</th>
-                                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Öğrenci</th>
-                                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">TC</th>
-                                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Sınıf</th>
-                                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Baba Adı</th>
-                                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Baba Tel</th>
-                                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Anne Adı</th>
-                                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Anne Tel</th>
+                                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Öğrenci Adı</th>
+                                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">TC/KART ID</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100">
-                                {data.map((row, i) => (
-                                    <tr key={i} className="hover:bg-gray-50/50 transition-colors">
-                                        <td className="px-4 py-3 text-gray-400 font-mono text-xs">{i + 1}</td>
-                                        <td className="px-4 py-3 font-medium text-gray-900">{row['Öğrencinin Adı Soyadı'] || '-'}</td>
-                                        <td className="px-4 py-3 text-gray-600 font-mono">{row['Öğrencinin T.C. Kimlik Numarası'] || '-'}</td>
-                                        <td className="px-4 py-3">
-                                            <span className="px-2 py-0.5 bg-gray-100 rounded text-xs font-medium text-gray-600">
-                                                {row['Öğrencinin Sınıfı'] || '-'}
-                                            </span>
-                                        </td>
-                                        <td className="px-4 py-3 text-gray-700">{row['Öğrencinin Baba Adı'] || '-'}</td>
-                                        <td className="px-4 py-3 text-gray-600 font-mono text-xs">{row['Öğrencinin Baba Cep Telefonu'] || '-'}</td>
-                                        <td className="px-4 py-3 text-gray-700">{row['Öğrencinin Anne Adı'] || '-'}</td>
-                                        <td className="px-4 py-3 text-gray-600 font-mono text-xs">{row['Öğrencinin Anne Cep Telefonu'] || '-'}</td>
-                                    </tr>
-                                ))}
+                                {data.map((row, i) => {
+                                    const getVal = (possibleKeys: string[]) => {
+                                        for (const k of possibleKeys) {
+                                            if (row[k] !== undefined && row[k] !== '') {
+                                                return String(row[k]).trim();
+                                            }
+                                        }
+                                        return '-';
+                                    };
+                                    const studentName = getVal(['İSİM', 'Öğrencinin Adı Soyadı', 'AD SOYAD', 'ADSOYAD']);
+                                    const cardID = getVal(['KANTİN KART NUMARASI', 'Öğrencinin T.C. Kimlik Numarası', 'KART ID', 'KART NUMARASI']);
+
+                                    return (
+                                        <tr key={i} className="hover:bg-gray-50/50 transition-colors">
+                                            <td className="px-4 py-3 text-gray-400 font-mono text-xs">{i + 1}</td>
+                                            <td className="px-4 py-3 font-medium text-gray-900">{studentName}</td>
+                                            <td className="px-4 py-3 text-gray-600 font-mono">{cardID}</td>
+                                        </tr>
+                                    );
+                                })}
                             </tbody>
                         </table>
                     </div>

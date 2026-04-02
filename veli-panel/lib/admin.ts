@@ -485,3 +485,159 @@ export async function updateStudentWithParents(
         return { success: false, error: error.message };
     }
 }
+
+// --- Bulk Upsert All Student & Parent Data ---
+
+export async function bulkUpsertStudents(
+    studentsData: { 
+        adSoyad: string; 
+        kartID: string; 
+        sinif: string; 
+        parents: { name: string; phone: string }[] 
+    }[]
+): Promise<{ success: boolean; inserted: number; updated: number; errors: string[] }> {
+    const errors: string[] = [];
+    let inserted = 0;
+    let updated = 0;
+
+    try {
+        const stdQuery = query(collection(db, 'ogrenciler'));
+        const stdSnap = await getDocs(stdQuery);
+        
+        const existingStudents = new Map<string, any>();
+        stdSnap.forEach(snap => {
+            const data = snap.data();
+            const normName = normalizeName(data.adSoyad);
+            if (normName) {
+                existingStudents.set(normName, { id: snap.id, ...data });
+            }
+            if (data.kartID) {
+                // Eger isme degil, sadece kart idsine gore aramak gerekirse diye de bir key ekliyoruz.
+                // Ornegin 'KART:3503...' şeklinde.
+                existingStudents.set('KART:' + data.kartID.toString().trim(), { id: snap.id, ...data });
+            }
+        });
+
+        const prtQuery = query(collection(db, 'veliler'));
+        const prtSnap = await getDocs(prtQuery);
+        
+        const existingParents = new Map<string, any>();
+        prtSnap.forEach(snap => {
+            const data = snap.data();
+            if (data.telefonNo) {
+                existingParents.set(data.telefonNo, { id: snap.id, ...data });
+            }
+        });
+
+        // Use 200 batch limit as max operations is 500
+        const BATCH_SIZE = 200; 
+        for (let i = 0; i < studentsData.length; i += BATCH_SIZE) {
+            const chunk = studentsData.slice(i, i + BATCH_SIZE);
+            const batch = writeBatch(db);
+
+            for (const item of chunk) {
+                if (!item.adSoyad) {
+                    errors.push("İsimsiz kayıt atlandı.");
+                    continue;
+                }
+
+                // Prepare Parents
+                const parentIds: string[] = [];
+                const parentPhones: string[] = [];
+
+                for (const p of item.parents) {
+                    if (!p.phone) continue;
+                    let phoneStr = p.phone.toString().replace(/\D/g, ''); 
+                    if (!phoneStr) continue;
+
+                    parentPhones.push(phoneStr);
+                    
+                    const existingParent = existingParents.get(phoneStr);
+                    if (existingParent) {
+                        parentIds.push(existingParent.id);
+                        if (p.name && (!existingParent.adSoyad || existingParent.adSoyad.trim() === '')) {
+                            // isim boşsa güncelle
+                            batch.update(doc(db, 'veliler', existingParent.id), { adSoyad: p.name });
+                            existingParent.adSoyad = p.name;
+                        }
+                    } else {
+                        // Yeni veli
+                        const newParentRef = doc(collection(db, 'veliler'));
+                        const pId = newParentRef.id;
+                        parentIds.push(pId);
+                        batch.set(newParentRef, {
+                            veliID: pId,
+                            telefonNo: phoneStr,
+                            adSoyad: p.name || '',
+                            aktif: true,
+                            sifreDegistirmeZorunlu: true,
+                            kayitTarihi: Timestamp.now()
+                        });
+                        existingParents.set(phoneStr, { id: pId, adSoyad: p.name }); 
+                    }
+                }
+
+                // Student Identification
+                const normName = normalizeName(item.adSoyad);
+                let existStd = existingStudents.get(normName);
+                
+                // Fallback check by Kart ID if name did not match but Kart ID provided matches perfectly
+                if (!existStd && item.kartID) {
+                    existStd = existingStudents.get('KART:' + item.kartID.toString().trim());
+                }
+
+                if (existStd) {
+                    // Update var olan öğrenci
+                    const studentRef = doc(db, 'ogrenciler', existStd.id);
+                    batch.update(studentRef, {
+                        adSoyad: item.adSoyad.trim(), // İsim güncel halini yaz
+                        kartID: item.kartID || existStd.kartID || '',
+                        sinif: item.sinif || existStd.sinif || 'Belirsiz',
+                        veliIDleri: [...new Set([...(existStd.veliIDleri || []), ...parentIds])],
+                        veliTelefonlari: [...new Set([...(existStd.veliTelefonlari || []), ...parentPhones])]
+                    });
+                    
+                    // Memory güncelle
+                    existingStudents.set(normName, { 
+                        ...existStd, 
+                        kartID: item.kartID || existStd.kartID,
+                        adSoyad: item.adSoyad.trim(),
+                        veliIDleri: [...new Set([...(existStd.veliIDleri || []), ...parentIds])],
+                        veliTelefonlari: [...new Set([...(existStd.veliTelefonlari || []), ...parentPhones])]
+                    });
+                    if (item.kartID) {
+                        existingStudents.set('KART:' + item.kartID.trim(), existingStudents.get(normName));
+                    }
+                    updated++;
+                } else {
+                    // Yeni öğrenci
+                    const newStudentRef = doc(collection(db, 'ogrenciler'));
+                    const stdId = item.kartID || newStudentRef.id;
+                    
+                    batch.set(newStudentRef, {
+                        adSoyad: item.adSoyad.trim(), 
+                        kartID: stdId,
+                        sinif: item.sinif || 'Belirsiz',
+                        bakiye: 0,
+                        islemGecmisi: [],
+                        veliIDleri: parentIds,
+                        veliTelefonlari: parentPhones
+                    });
+                    
+                    inserted++;
+                    existingStudents.set(normName, { id: newStudentRef.id, kartID: stdId, veliIDleri: parentIds, veliTelefonlari: parentPhones });
+                    if (item.kartID) {
+                        existingStudents.set('KART:' + item.kartID.trim(), existingStudents.get(normName));
+                    }
+                }
+            }
+
+            await batch.commit();
+        }
+
+        return { success: true, inserted, updated, errors };
+    } catch (err: any) {
+        console.error('Error in bulkUpsertStudents:', err);
+        return { success: false, inserted, updated, errors: [...errors, err.message] };
+    }
+}
