@@ -552,12 +552,6 @@ class _UrunListesiEkraniState extends State<UrunListesiEkrani> {
         }
       }
 
-      // 🔴 ADMIN ÇIKIŞ KARTI KONTROLÜ (EN BAŞTA)
-      if (temizKartID == VeriYoneticisi().adminCikisKarti || metin == VeriYoneticisi().adminCikisKarti) {
-        print("🔴 ADMİN ÇIKIŞ KARTI OKUTULDU - Anında kapatılıyor...");
-        SystemNavigator.pop();
-        return;
-      }
 
       print('🔍 KART OKUYUCU: "${metin}" (Uzunluk: ${metin.length})');
       print('📝 HAM VERİ: "${_kartOkuyucuController.text}"');
@@ -1032,44 +1026,6 @@ class _UrunListesiEkraniState extends State<UrunListesiEkrani> {
       print("   🔸 Firebase ID: '$key' (${key.length} karakter) - Eşit mi? ${key == temizKartID}");
     });
     
-    // ÖZEL DURUM: Admin çıkış kartı kontrolü
-    if (temizKartID == veriYoneticisi.adminCikisKarti) {
-      print("🔴 ADMİN ÇIKIŞ KARTI OKUTULDU - Uygulama kapatılıyor...");
-      
-      // Önce tüm dialogları kapat
-      int popCount = 0;
-      while (Navigator.canPop(context) && popCount < 5) {
-        Navigator.pop(context);
-        popCount++;
-      }
-      
-      // Onay dialogu göster
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => AlertDialog(
-          title: Row(
-            children: [
-              Icon(Icons.power_settings_new, color: Colors.red, size: 40),
-              SizedBox(width: 10),
-              Text('Uygulama Kapatılıyor', style: TextStyle(color: Colors.red)),
-            ],
-          ),
-          content: Text(
-            'Admin kartı algılandı.\n\nUygulama 3 saniye içinde kapanacak...',
-            style: TextStyle(fontSize: 18),
-            textAlign: TextAlign.center,
-          ),
-        ),
-      );
-      
-      // 3 saniye bekle ve uygulamayı kapat
-      Future.delayed(Duration(seconds: 3), () {
-        SystemNavigator.pop(); // Uygulamayı kapat
-      });
-      
-      return; // Fonksiyonu bitir, devam etme
-    }
     
     // Açık dialogları kapat (maksimum 5 deneme)
     int popCount = 0;
