@@ -1,8 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ref, getDownloadURL } from 'firebase/storage';
-import { storage } from '@/lib/firebase';
 
 interface PhotoModalProps {
     isOpen: boolean;
@@ -37,56 +35,19 @@ export default function PhotoModal({
 
             setLoading(true);
             setError('');
-            try {
-                // Eğer path zaten bir URL ise direkt onu kullan
-                if (photoPath.startsWith('http')) {
-                    if (isMounted) setPhotoUrl(photoPath);
-                    if (isMounted) setLoading(false);
-                    return;
-                }
-
-                // Manuel URL oluşturma (CORS/getDownloadURL sorunlarını atlatmak için)
-                // Firebase REST API formatı: https://firebasestorage.googleapis.com/v0/b/[BUCKET]/o/[PATH]?alt=media
-                const bucket = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || 'okul-otomat-projesi.appspot.com';
-                // Eğer firebasestorage.app kullanılmışsa onu appspot.com a çevir (veya tam tersi) - genelde REST API'de appspot.com çalışır.
-                const cleanBucket = bucket.replace('.firebasestorage.app', '.appspot.com');
-                
-                const encodedPath = encodeURIComponent(photoPath);
-                const directUrl = `https://firebasestorage.googleapis.com/v0/b/${cleanBucket}/o/${encodedPath}?alt=media`;
-                
-                // İlk olarak getDownloadURL deneyelim, ama bir zamanlayıcı ile
-                const timeoutPromise = new Promise((_, reject) => 
-                    setTimeout(() => reject(new Error('Timeout')), 3000)
-                );
-                
-                let finalUrl: string;
-                try {
-                    const storageRef = ref(storage, photoPath);
-                    finalUrl = await Promise.race([
-                        getDownloadURL(storageRef),
-                        timeoutPromise
-                    ]) as string;
-                } catch (err) {
-                    console.warn("getDownloadURL çalışmadı, direkt URL deneniyor:", err);
-                    finalUrl = directUrl; // timeout veya hata durumunda fallback
-                }
-
-                if (isMounted) setPhotoUrl(finalUrl);
-            } catch (err: any) {
-                console.error("Fotoğraf bilgisi alma hatası:", err);
-                if (err.code === 'storage/object-not-found') {
-                    if (isMounted) {
-                        setError("Resim sunucuda bulunamadı veya henüz yüklenmedi.");
-                        setLoading(false);
-                    }
-                } else {
-                    if (isMounted) {
-                        setError("Resim bilgisi alınırken bir sorun oluştu.");
-                        setLoading(false);
-                    }
-                }
+            
+            // Eğer path zaten bir URL ise (http ile başlıyorsa)
+            if (photoPath.startsWith('http')) {
+                if (isMounted) setPhotoUrl(photoPath);
+                return;
             }
-            // `finally` kısmında `setLoading(false)` çağırmıyoruz, çünkü resmin `onLoad` veya `onError` olayında kapatacağız
+
+            // Kendi backend API'miz üzerinden Firebase CORS kurallarını atlayarak yükle
+            // Bu yöntem CORS sorununu sunucu tarafında çözer
+            const backendProxyUrl = `/api/image?path=${encodeURIComponent(photoPath)}`;
+            
+            // Eğer doğrudan src olarak atarsak:
+            if (isMounted) setPhotoUrl(backendProxyUrl);
         };
 
         loadPhoto();
@@ -146,7 +107,7 @@ export default function PhotoModal({
                             onLoad={() => setLoading(false)}
                             onError={() => {
                                 setLoading(false);
-                                setError("Resim yüklenemedi. (Token veya CORS sorunu olabilir)");
+                                setError("Resim sunucuda bulunamadı veya hata oluştu.");
                             }}
                             style={{ 
                                 opacity: loading ? 0 : 1, 
