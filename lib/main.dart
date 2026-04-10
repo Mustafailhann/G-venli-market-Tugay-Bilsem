@@ -370,8 +370,8 @@ class _AnaSayfaSecimState extends State<AnaSayfaSecim> {
           if (dialogClosed) return;
           
           final text = sifreController.text.trim();
-          // Admin kartı ID'si (3539442829) okutulursa otomatik giriş yap
-          if (text == '3539442829' || text == VeriYoneticisi().adminSifresi) {
+          // Admin şifresi girilirse otomatik giriş yap
+          if (text == VeriYoneticisi().adminSifresi) {
             dialogClosed = true;
             // Listener içinde dispose YAPMA - Future.microtask ile sonraya ertele
             Future.microtask(() {
@@ -406,11 +406,11 @@ class _AnaSayfaSecimState extends State<AnaSayfaSecim> {
                   keyboardType: TextInputType.number,
                   textInputAction: TextInputAction.done,
                   decoration: InputDecoration(
-                    labelText: 'Şifre veya Admin Kartı',
+                    labelText: 'Admin Şifresi',
                     border: OutlineInputBorder(),
                   ),
                   onSubmitted: (value) {
-                    if (!dialogClosed && (value == VeriYoneticisi().adminSifresi || value == '3539442829')) {
+                    if (!dialogClosed && value == VeriYoneticisi().adminSifresi) {
                       dialogClosed = true;
                       Future.microtask(() {
                         sifreController.dispose();
@@ -426,7 +426,7 @@ class _AnaSayfaSecimState extends State<AnaSayfaSecim> {
                 ),
                 SizedBox(height: 10),
                 Text(
-                  'Şifre girin veya admin kartını okutun',
+                  'Admin bölümüne girmek için şifrenizi girin',
                   style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                 ),
               ],
@@ -448,7 +448,7 @@ class _AnaSayfaSecimState extends State<AnaSayfaSecim> {
               ElevatedButton(
                 onPressed: () {
                   if (!dialogClosed) {
-                    if (sifreController.text == VeriYoneticisi().adminSifresi || sifreController.text == '3539442829') {
+                    if (sifreController.text == VeriYoneticisi().adminSifresi) {
                       dialogClosed = true;
                       Future.microtask(() {
                         sifreController.dispose();

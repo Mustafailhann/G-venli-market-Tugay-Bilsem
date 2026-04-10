@@ -38,19 +38,55 @@ export default function PhotoModal({
             setLoading(true);
             setError('');
             try {
-                const storageRef = ref(storage, photoPath);
-                const url = await getDownloadURL(storageRef);
-                if (isMounted) setPhotoUrl(url);
-            } catch (err: any) {
-                console.error("Fotoğraf yükleme hatası:", err);
-                if (err.code === 'storage/object-not-found') {
-                    if (isMounted) setError("Resim sunucuda bulunamadı veya henüz yüklenmedi.");
-                } else {
-                    if (isMounted) setError("Resim yüklenirken bir sorun oluştu.");
+                // Eğer path zaten bir URL ise direkt onu kullan
+                if (photoPath.startsWith('http')) {
+                    if (isMounted) setPhotoUrl(photoPath);
+                    if (isMounted) setLoading(false);
+                    return;
                 }
-            } finally {
-                if (isMounted) setLoading(false);
+
+                // Manuel URL oluşturma (CORS/getDownloadURL sorunlarını atlatmak için)
+                // Firebase REST API formatı: https://firebasestorage.googleapis.com/v0/b/[BUCKET]/o/[PATH]?alt=media
+                const bucket = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || 'okul-otomat-projesi.appspot.com';
+                // Eğer firebasestorage.app kullanılmışsa onu appspot.com a çevir (veya tam tersi) - genelde REST API'de appspot.com çalışır.
+                const cleanBucket = bucket.replace('.firebasestorage.app', '.appspot.com');
+                
+                const encodedPath = encodeURIComponent(photoPath);
+                const directUrl = `https://firebasestorage.googleapis.com/v0/b/${cleanBucket}/o/${encodedPath}?alt=media`;
+                
+                // İlk olarak getDownloadURL deneyelim, ama bir zamanlayıcı ile
+                const timeoutPromise = new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error('Timeout')), 3000)
+                );
+                
+                let finalUrl: string;
+                try {
+                    const storageRef = ref(storage, photoPath);
+                    finalUrl = await Promise.race([
+                        getDownloadURL(storageRef),
+                        timeoutPromise
+                    ]) as string;
+                } catch (err) {
+                    console.warn("getDownloadURL çalışmadı, direkt URL deneniyor:", err);
+                    finalUrl = directUrl; // timeout veya hata durumunda fallback
+                }
+
+                if (isMounted) setPhotoUrl(finalUrl);
+            } catch (err: any) {
+                console.error("Fotoğraf bilgisi alma hatası:", err);
+                if (err.code === 'storage/object-not-found') {
+                    if (isMounted) {
+                        setError("Resim sunucuda bulunamadı veya henüz yüklenmedi.");
+                        setLoading(false);
+                    }
+                } else {
+                    if (isMounted) {
+                        setError("Resim bilgisi alınırken bir sorun oluştu.");
+                        setLoading(false);
+                    }
+                }
             }
+            // `finally` kısmında `setLoading(false)` çağırmıyoruz, çünkü resmin `onLoad` veya `onError` olayında kapatacağız
         };
 
         loadPhoto();
@@ -85,14 +121,15 @@ export default function PhotoModal({
                 </div>
 
                 {/* Content */}
-                <div className="p-6 bg-gray-50 flex-1 flex items-center justify-center min-h-[300px]">
-                    {loading ? (
-                        <div className="flex flex-col items-center">
+                <div className="p-6 bg-gray-50 flex-1 flex items-center justify-center min-h-[300px] relative">
+                    {loading && !error && (
+                        <div className="flex flex-col items-center absolute inset-0 justify-center">
                             <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mb-3"></div>
                             <span className="text-sm text-gray-500">Fotoğraf indiriliyor...</span>
                         </div>
-                    ) : error ? (
-                        <div className="text-center p-6">
+                    )}
+                    {error && (
+                        <div className="text-center p-6 z-10">
                             <div className="w-16 h-16 bg-red-100 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
                                 <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
@@ -100,13 +137,23 @@ export default function PhotoModal({
                             </div>
                             <p className="text-red-600 font-medium">{error}</p>
                         </div>
-                    ) : photoUrl ? (
+                    )}
+                    {photoUrl && !error && (
                         <img 
                             src={photoUrl} 
                             alt="İşlem Fotoğrafı" 
                             className="max-h-[60vh] w-auto h-auto rounded-xl object-contain shadow-sm bg-white"
+                            onLoad={() => setLoading(false)}
+                            onError={() => {
+                                setLoading(false);
+                                setError("Resim yüklenemedi. (Token veya CORS sorunu olabilir)");
+                            }}
+                            style={{ 
+                                opacity: loading ? 0 : 1, 
+                                position: loading ? 'absolute' : 'relative' 
+                            }}
                         />
-                    ) : null}
+                    )}
                 </div>
 
                 {/* Footer */}
