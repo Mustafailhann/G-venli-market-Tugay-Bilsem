@@ -27,8 +27,17 @@ import 'data/urunler.dart' as Data;
 CameraController? globalCameraController;
 List<CameraDescription>? cameras;
 
+class MyHttpOverrides extends HttpOverrides {
+  @override
+  HttpClient createHttpClient(SecurityContext? context) {
+    return super.createHttpClient(context)
+      ..badCertificateCallback = (X509Certificate cert, String host, int port) => true;
+  }
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  HttpOverrides.global = MyHttpOverrides();
   
   // KIOSK MODU - Cihazın navigasyon barını ve üst statüs çubuğunu gizler
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
