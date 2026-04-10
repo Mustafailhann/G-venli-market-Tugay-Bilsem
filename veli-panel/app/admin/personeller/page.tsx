@@ -147,10 +147,10 @@ export default function StudentsPage() {
     };
 
     const filteredStudents = students
-        .filter(student => student.tip !== 'Personel')
+        .filter(student => student.tip === 'Personel')
         .filter(student =>
             student.adSoyad.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            student.sinif.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            (student.unvan || student.sinif).toLowerCase().includes(searchTerm.toLowerCase()) ||
             (student.kartID || '').toLowerCase().includes(searchTerm.toLowerCase())
         )
         .filter(student => {
@@ -176,15 +176,15 @@ export default function StudentsPage() {
         <div className="container-custom py-8 px-8">
             <div className="flex items-center justify-between mb-8">
                 <div>
-                    <h1 className="text-2xl font-bold text-gray-900">Öğrenci Yönetimi</h1>
-                    <p className="text-gray-500 mt-1">Tüm öğrencileri ve bakiyelerini yönetin</p>
+                    <h1 className="text-2xl font-bold text-gray-900">Personel Yönetimi</h1>
+                    <p className="text-gray-500 mt-1">Öğretmen, müdür ve diğer kurum personellerini yönetin</p>
                 </div>
                 <div className="flex gap-3">
                     <Button
                         className="bg-blue-600 text-white"
                         onClick={handleAddStudent}
                     >
-                        + Yeni Öğrenci
+                        + Yeni Personel
                     </Button>
                 </div>
             </div>
@@ -194,7 +194,7 @@ export default function StudentsPage() {
                 <div className="relative flex-1 min-w-48">
                     <input
                         type="text"
-                        placeholder="İsim, sınıf veya kart ID ile ara..."
+                        placeholder="İsim, unvan veya kart ID ile ara..."
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                         className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
@@ -226,7 +226,7 @@ export default function StudentsPage() {
                             </button>
                         ))}
                     </div>
-                    <span className="text-xs text-gray-400 font-medium">{filteredStudents.length} öğrenci</span>
+                    <span className="text-xs text-gray-400 font-medium">{filteredStudents.length} personel</span>
                 </div>
             </div>
 
@@ -235,15 +235,15 @@ export default function StudentsPage() {
                 {loading ? (
                     <div className="p-8 text-center text-gray-500">Yükleniyor...</div>
                 ) : filteredStudents.length === 0 ? (
-                    <div className="p-8 text-center text-gray-500">Öğrenci bulunamadı.</div>
+                    <div className="p-8 text-center text-gray-500">Personel bulunamadı.</div>
                 ) : (
                     <div className="overflow-x-auto">
                         <table className="w-full text-left">
                             <thead className="bg-gray-50 border-b border-gray-200">
                                 <tr>
                                     <th className="px-4 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider w-28">ID</th>
-                                    <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Öğrenci</th>
-                                    <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Sınıf</th>
+                                    <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Personel</th>
+                                    <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Unvan/Branş</th>
                                     <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Veli</th>
                                     <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Bakiye</th>
                                     <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Kart Ücreti</th>
@@ -265,10 +265,10 @@ export default function StudentsPage() {
                                         <td className="px-6 py-4">
                                             <div className="font-medium text-gray-900">{student.adSoyad}</div>
                                         </td>
-                                        {/* Sınıf */}
+                                        {/* Unvan/Sınıf */}
                                         <td className="px-6 py-4 text-gray-600">
                                             <span className="px-2 py-1 bg-gray-100 rounded text-xs font-medium">
-                                                {student.sinif}
+                                                {student.unvan || student.sinif}
                                             </span>
                                         </td>
                                         {/* Veli */}
@@ -331,7 +331,7 @@ export default function StudentsPage() {
                                                 + Bakiye
                                             </button>
                                             <button
-                                                onClick={() => handleDetail(student)}
+                                                onClick={() => router.push(`/admin/personeller/${student.id}`)}
                                                 className="text-sm bg-blue-50 text-blue-600 px-3 py-1.5 rounded-lg hover:bg-blue-100 font-medium transition-colors mr-2"
                                             >
                                                 Detay
@@ -370,6 +370,7 @@ export default function StudentsPage() {
                 onConfirm={handleStudentSubmit}
                 onDelete={handleDelete}
                 initialData={editingStudent}
+                defaultType="Personel"
             />
         </div>
     );

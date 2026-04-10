@@ -15,7 +15,7 @@ import {
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { formatPhoneEmail } from './auth';
-import { Ogrenci, Veli, Islem } from '@/types';
+import { Ogrenci, Veli, Islem, KartUcreti } from '@/types';
 import { Timestamp } from 'firebase/firestore';
 
 // NOTE: Creating Auth users requires Firebase Admin SDK or Cloud Functions if running from Client.
@@ -203,6 +203,47 @@ export async function setStudentBalance(studentId: string, newBalance: number, o
         return { success: true };
     } catch (error: any) {
         console.error("Error setting balance:", error);
+        return { success: false, error: error.message };
+    }
+}
+
+export async function addKartUcreti(
+    studentId: string,
+    tutar: number           // Bu kart için alınan ücret (örn: 50 TL, 200 TL...)
+): Promise<{ success: boolean; error?: string }> {
+    try {
+        if (tutar <= 0) {
+            return { success: false, error: 'Tutar sıfırdan büyük olmalıdır.' };
+        }
+
+        const studentRef = doc(db, 'ogrenciler', studentId);
+        const studentSnap = await getDoc(studentRef);
+
+        if (!studentSnap.exists()) {
+            return { success: false, error: 'Öğrenci bulunamadı.' };
+        }
+
+        const data = studentSnap.data();
+        const mevcutGecmis: KartUcreti[] = data.kartUcretiGecmisi || [];
+        const islemNo = mevcutGecmis.length + 1; // Kaçıncı kart
+
+        const yeniKartUcreti: KartUcreti = {
+            tarih: Timestamp.now(),
+            tutar,
+            islemNo,
+            aciklama: `${islemNo}. Kart: ${tutar.toFixed(2)} ₺`
+        };
+
+        const batch = writeBatch(db);
+        batch.update(studentRef, {
+            toplamKartUcreti: increment(tutar),
+            kartUcretiGecmisi: arrayUnion(yeniKartUcreti)
+        });
+        await batch.commit();
+
+        return { success: true };
+    } catch (error: any) {
+        console.error('Error adding kart ücreti:', error);
         return { success: false, error: error.message };
     }
 }

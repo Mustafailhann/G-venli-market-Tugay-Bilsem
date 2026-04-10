@@ -22,13 +22,16 @@ interface StudentModalProps {
     ) => Promise<void>;
     onDelete?: (studentId: string) => Promise<void>;
     initialData?: Ogrenci | null;
+    defaultType?: 'Öğrenci' | 'Personel';
 }
 
-export default function StudentModal({ isOpen, onClose, onConfirm, onDelete, initialData }: StudentModalProps) {
+export default function StudentModal({ isOpen, onClose, onConfirm, onDelete, initialData, defaultType = 'Öğrenci' }: StudentModalProps) {
     const [formData, setFormData] = useState({
         adSoyad: '',
         sinif: '',
-        kartID: ''
+        kartID: '',
+        tip: 'Öğrenci' as 'Öğrenci' | 'Personel',
+        unvan: ''
     });
 
     const [parents, setParents] = useState<ParentData[]>([
@@ -50,7 +53,9 @@ export default function StudentModal({ isOpen, onClose, onConfirm, onDelete, ini
                 setFormData({
                     adSoyad: initialData.adSoyad || '',
                     sinif: initialData.sinif || '',
-                    kartID: initialData.kartID || ''
+                    kartID: initialData.kartID || '',
+                    tip: initialData.tip || 'Öğrenci',
+                    unvan: initialData.unvan || ''
                 });
                 setPhotoPreview(initialData.resimURL || null);
 
@@ -82,7 +87,7 @@ export default function StudentModal({ isOpen, onClose, onConfirm, onDelete, ini
                     ]);
                 }
             } else {
-                setFormData({ adSoyad: '', sinif: '', kartID: '' });
+                setFormData({ adSoyad: '', sinif: '', kartID: '', tip: defaultType, unvan: '' });
                 setPhotoPreview(null);
                 setParents([
                     { name: '', phone: '', label: 'Anne' },
@@ -132,7 +137,9 @@ export default function StudentModal({ isOpen, onClose, onConfirm, onDelete, ini
             <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden max-h-[90vh] overflow-y-auto">
                 <div className="p-6 border-b border-gray-100">
                     <h3 className="text-xl font-bold text-gray-900">
-                        {isEditMode ? 'Öğrenci Düzenle' : 'Yeni Öğrenci Ekle'}
+                        {isEditMode 
+                            ? (formData.tip === 'Personel' ? 'Personel Düzenle' : 'Öğrenci Düzenle') 
+                            : (defaultType === 'Personel' ? 'Yeni Personel Ekle' : 'Yeni Öğrenci Ekle')}
                     </h3>
                 </div>
 
@@ -197,6 +204,31 @@ export default function StudentModal({ isOpen, onClose, onConfirm, onDelete, ini
                         </div>
 
                         <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">Kayıt Tipi</label>
+                            <select
+                                value={formData.tip}
+                                onChange={(e) => setFormData({ ...formData, tip: e.target.value as 'Öğrenci' | 'Personel' })}
+                                className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-white"
+                            >
+                                <option value="Öğrenci">Öğrenci</option>
+                                <option value="Personel">Personel</option>
+                            </select>
+                        </div>
+                        
+                        {formData.tip === 'Personel' && (
+                            <div className="col-span-2">
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Unvan / Branş</label>
+                                <input
+                                    type="text"
+                                    value={formData.unvan}
+                                    onChange={(e) => setFormData({ ...formData, unvan: e.target.value })}
+                                    placeholder="Örn: Sınıf Öğretmeni, Müdür Yardımcısı"
+                                    className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                                />
+                            </div>
+                        )}
+
+                        <div>
                             <label className="block text-sm font-medium text-gray-700 mb-2">Kart ID (Opsiyonel)</label>
                             <input
                                 type="text"
@@ -208,9 +240,10 @@ export default function StudentModal({ isOpen, onClose, onConfirm, onDelete, ini
                         </div>
                     </div>
 
-                    {/* Parents Section - Always visible */}
-                    <div className="border-t border-gray-100 pt-4">
-                        <label className="block text-sm font-medium text-gray-900 mb-3">Veli Bilgileri</label>
+                    {/* Parents Section - Always visible unless Personel */}
+                    {formData.tip !== 'Personel' && (
+                        <div className="border-t border-gray-100 pt-4">
+                            <label className="block text-sm font-medium text-gray-900 mb-3">Veli Bilgileri</label>
 
                         {loadingParents ? (
                             <div className="text-center py-4 text-sm text-gray-500">Veli bilgileri yükleniyor...</div>
@@ -249,6 +282,7 @@ export default function StudentModal({ isOpen, onClose, onConfirm, onDelete, ini
                             * Telefon numarası sistemde kayıtlıysa otomatik eşleşir. Değilse yeni veli oluşturulur.
                         </p>
                     </div>
+                    )}
 
                     {/* Actions */}
                     <div className="flex gap-3 pt-4">

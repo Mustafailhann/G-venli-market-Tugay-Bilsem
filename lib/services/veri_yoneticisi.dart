@@ -85,6 +85,7 @@ class VeriYoneticisi extends ChangeNotifier {
                 tutar: (islem['tutar'] as num).toDouble(),
                 aciklama: islem['aciklama'],
                 urunler: (islem['urunler'] as List?)?.cast<String>(),
+                islemFotografi: islem['islemFotografi'],
               );
             }).toList() ?? [];
 
@@ -94,6 +95,7 @@ class VeriYoneticisi extends ChangeNotifier {
               sinif: data['sinif'],
               bakiye: (data['bakiye'] as num).toDouble(),
               islemGecmisi: islemler,
+              tip: data['tip'],
             );
 
             // Döküman ID'siyle kaydet (her zaman)
@@ -238,7 +240,7 @@ class VeriYoneticisi extends ChangeNotifier {
   }
 
 
-  Future<bool> odemeYap(String kartID, double tutar, List<SepetItem> sepet) async {
+  Future<bool> odemeYap(String kartID, double tutar, List<SepetItem> sepet, {String? islemFotografiYolu}) async {
     try {
       // Firestore güncellemesi için her zaman docID kullan
       final docID = ogrenciler[kartID]?.docID ?? kartID;
@@ -255,7 +257,8 @@ class VeriYoneticisi extends ChangeNotifier {
         'tip': 'Harcama',
         'tutar': -tutar, // Negatif tutar (Harcama)
         'aciklama': 'Kantin Alışverişi',
-        'urunler': sepet.map((item) => "${item.urun.isim} (x${item.miktar})").toList()
+        'urunler': sepet.map((item) => "${item.urun.isim} (x${item.miktar})").toList(),
+        if (islemFotografiYolu != null) 'islemFotografi': islemFotografiYolu
       };
 
       batch.update(docRef, {
@@ -369,12 +372,14 @@ class VeriYoneticisi extends ChangeNotifier {
           'adSoyad': ogrenci.adSoyad,
           'sinif': ogrenci.sinif,
           'bakiye': ogrenci.bakiye,
+          'tip': ogrenci.tip,
           'islemGecmisi': ogrenci.islemGecmisi.map((islem) => {
             'tarih': islem.tarih.toIso8601String(),
             'tip': islem.tip,
             'tutar': islem.tutar,
             'aciklama': islem.aciklama,
             'urunler': islem.urunler,
+            'islemFotografi': islem.islemFotografi,
           }).toList(),
         };
       });
@@ -400,6 +405,7 @@ class VeriYoneticisi extends ChangeNotifier {
               tutar: islem['tutar'],
               aciklama: islem['aciklama'],
               urunler: (islem['urunler'] as List?)?.cast<String>(),
+              islemFotografi: islem['islemFotografi'],
             );
           }).toList();
           
@@ -409,6 +415,7 @@ class VeriYoneticisi extends ChangeNotifier {
             sinif: value['sinif'],
             bakiye: value['bakiye'],
             islemGecmisi: islemler,
+            tip: value['tip'],
           );
         });
         print('📱 ${ogrenciler.length} öğrenci OFFLINE verilerden yüklendi');
@@ -444,6 +451,7 @@ class VeriYoneticisi extends ChangeNotifier {
                   : islem['tutar'], // Yüklerken zaten negatif değilse negatif yap
               'aciklama': islem['aciklama'],
               'urunler': islem['urunler'],
+              if (islem['islemFotografi'] != null) 'islemFotografi': islem['islemFotografi']
             }]),
           });
           

@@ -9,7 +9,7 @@ import Card from '@/components/ui/Card';
 import BalanceModal from '@/components/admin/BalanceModal';
 import PhotoModal from '@/components/admin/PhotoModal';
 
-export default function AdminStudentDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default function AdminPersonelDetailPage({ params }: { params: Promise<{ id: string }> }) {
     const [ogrenci, setOgrenci] = useState<Ogrenci | null>(null);
     const [veliler, setVeliler] = useState<Veli[]>([]);
     const [loading, setLoading] = useState(true);
@@ -85,8 +85,8 @@ export default function AdminStudentDetailPage({ params }: { params: Promise<{ i
         return (
             <div className="min-h-screen bg-gray-50 flex items-center justify-center">
                 <div className="text-center">
-                    <p className="text-gray-600 mb-4">Öğrenci bulunamadı</p>
-                    <Link href="/admin/ogrenciler" className="text-blue-600 hover:underline">
+                    <p className="text-gray-600 mb-4">Personel bulunamadı</p>
+                    <Link href="/admin/personeller" className="text-blue-600 hover:underline">
                         ← Listeye dön
                     </Link>
                 </div>
@@ -115,7 +115,7 @@ export default function AdminStudentDetailPage({ params }: { params: Promise<{ i
             <div className="bg-white border-b border-gray-200">
                 <div className="container-custom py-6 px-8">
                     <Link
-                        href="/admin/ogrenciler"
+                        href="/admin/personeller"
                         className="text-blue-600 hover:text-blue-700 flex items-center gap-2 mb-4 group"
                     >
                         <span className="group-hover:-translate-x-1 transition-transform">←</span> Geri Dön
@@ -145,7 +145,7 @@ export default function AdminStudentDetailPage({ params }: { params: Promise<{ i
                                 <h1 className="text-3xl font-bold text-gray-900">{ogrenci.adSoyad}</h1>
                                 <div className="flex flex-wrap gap-3 mt-2 text-gray-600">
                                     <span className="bg-gray-100 px-3 py-1 rounded-lg text-sm font-medium">
-                                        Sınıf: {ogrenci.sinif}
+                                        Unvan / Branş: {ogrenci.unvan || ogrenci.sinif || '-'}
                                     </span>
                                     <span className={`px-3 py-1 rounded-lg text-sm font-semibold ${ogrenci.bakiye < 0 ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
                                         Bakiye: {ogrenci.bakiye.toFixed(2)} ₺
@@ -172,34 +172,7 @@ export default function AdminStudentDetailPage({ params }: { params: Promise<{ i
 
             {/* Main Content */}
             <div className="container-custom py-8 px-8 space-y-8">
-                {/* Parent Info */}
-                {veliler.length > 0 && (
-                    <div className="grid md:grid-cols-2 gap-6">
-                        {veliler.map((veli, index) => (
-                            <Card key={veli.veliID}>
-                                <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center flex-shrink-0">
-                                        <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                                        </svg>
-                                    </div>
-                                    <div>
-                                        <div className="text-xs text-gray-500 font-medium uppercase tracking-wide">
-                                            {index === 0 ? 'Anne' : 'Baba'}
-                                        </div>
-                                        <div className="font-semibold text-gray-900">{veli.adSoyad || 'İsim girilmemiş'}</div>
-                                        <div className="text-sm text-gray-600 flex items-center gap-1">
-                                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                                            </svg>
-                                            {veli.telefonNo || 'Telefon girilmemiş'}
-                                        </div>
-                                    </div>
-                                </div>
-                            </Card>
-                        ))}
-                    </div>
-                )}
+                {/* Parents Info Removed */}
 
                 {/* Stats Row */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

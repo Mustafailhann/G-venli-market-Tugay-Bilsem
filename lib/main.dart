@@ -6,8 +6,11 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:camera/camera.dart';
+import 'dart:io';
 import 'firebase_options.dart';
 
 // Model imports
@@ -21,6 +24,9 @@ import 'services/update_service.dart';
 // Data imports
 import 'data/urunler.dart' as Data;
 
+CameraController? globalCameraController;
+List<CameraDescription>? cameras;
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
@@ -30,6 +36,31 @@ void main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+  
+  try {
+    cameras = await availableCameras();
+    if (cameras != null && cameras!.isNotEmpty) {
+      // Try to find front camera
+      CameraDescription? frontCamera;
+      for (var camera in cameras!) {
+        if (camera.lensDirection == CameraLensDirection.front) {
+          frontCamera = camera;
+          break;
+        }
+      }
+      
+      globalCameraController = CameraController(
+        frontCamera ?? cameras!.first,
+        ResolutionPreset.medium,
+        enableAudio: false,
+      );
+      await globalCameraController!.initialize();
+      print("📸 Kamera başlatıldı");
+    }
+  } catch (e) {
+    print("⚠️ Kamera başlatılamadı: $e");
+  }
+
   runApp(const OkulOtomatApp());
 }
 
@@ -1444,13 +1475,31 @@ class _UrunListesiEkraniState extends State<UrunListesiEkrani> {
       
       print("🛒 Sepet toplam: $toplamTutar TL");
       
+      // Limit belirleme: Personel ise -50, Öğrenci ise -10
+      double limit = (ogrenci.tip == 'Personel') ? -50.0 : -10.0;
+      
       // Sepet doluysa ödeme yap
-      if ((ogrenci.bakiye - toplamTutar) >= -10.0) {
+      if ((ogrenci.bakiye - toplamTutar) >= limit) {
         print("✅ Yeterli limit var, ödeme yapılıyor...");
+
+        // Arkaplanda fotoğraf çek
+        String? fotoYolu;
+        if (globalCameraController != null && globalCameraController!.value.isInitialized) {
+          try {
+            final XFile image = await globalCameraController!.takePicture();
+            fotoYolu = 'islem_fotograflari/$temizKartID/${DateTime.now().millisecondsSinceEpoch}.jpg';
+            
+            // Arka planda Firebase'e yükle (await olmadan!)
+            _fotografiArkaplandaYukle(image, fotoYolu);
+          } catch (e) {
+            print("⚠️ Fotoğraf çekilemedi: $e");
+          }
+        }
+
         // Başarılı ödeme
         // Timeout ile ödeme yap (offline modda Firebase takılmasın)
         try {
-          await veriYoneticisi.odemeYap(temizKartID, toplamTutar, sepet)
+          await veriYoneticisi.odemeYap(temizKartID, toplamTutar, sepet, islemFotografiYolu: fotoYolu)
             .timeout(Duration(seconds: 3)); // 3 saniye timeout
         } catch (e) {
           print("⚠️ Ödeme Firebase'e kaydedilemedi ama offline kaydedildi: $e");
@@ -1476,9 +1525,12 @@ class _UrunListesiEkraniState extends State<UrunListesiEkrani> {
       } else {
         print("❌ Yetersiz Bakiye!");
         if (!mounted) return;
+        
+        double limit = (ogrenci.tip == 'Personel') ? -50.0 : -10.0;
+        
         _sonucGoster(
           "Yetersiz Bakiye", 
-          "${ogrenci.adSoyad}\nMevcut Bakiye: ${ogrenci.bakiye.toStringAsFixed(2)} TL\nGerekli: ${toplamTutar.toStringAsFixed(2)} TL\n(-10 TL limiti aşıldı)", 
+          "${ogrenci.adSoyad}\nMevcut Bakiye: ${ogrenci.bakiye.toStringAsFixed(2)} TL\nGerekli: ${toplamTutar.toStringAsFixed(2)} TL\n(${limit.toStringAsFixed(0)} TL limiti aşıldı)", 
           false,
           false // Refresh yapma
         );
@@ -1487,6 +1539,19 @@ class _UrunListesiEkraniState extends State<UrunListesiEkrani> {
       print("❌ Öğrenci bulunamadı: $temizKartID");
       if (!mounted) return;
       _sonucGoster("Tanımsız Kart", "Bu kart sisteme kayıtlı değil.\nKart ID: $temizKartID", false, false);
+    }
+  }
+
+  void _fotografiArkaplandaYukle(XFile image, String path) async {
+    try {
+      final ref = FirebaseStorage.instance.ref().child(path);
+      await ref.putFile(File(image.path));
+      print("✅ Fotoğraf arka planda yüklendi: $path");
+      
+      // İsterseniz dosyayı silebilirsiniz: 
+      // File(image.path).delete();
+    } catch (e) {
+      print("⚠️ Arka planda fotoğraf yüklenemedi: $e");
     }
   }
 
@@ -1995,7 +2060,7 @@ class _UrunListesiEkraniState extends State<UrunListesiEkrani> {
   }
 }
 
-// UrunKarti Widget'ı (Aynı kalacak, yer kaplamasın diye buraya tekrar yazmadım, alt kısma eski UrunKarti kodunuzu ekleyin)
+// UrunKarti Widget'ı
 class UrunKarti extends StatelessWidget {
   final Urun urun;
   final int miktar;
@@ -2012,126 +2077,178 @@ class UrunKarti extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final bool stokTukendi = urun.stok <= 0;
+
     return Card(
-      elevation: 3.0,
+      elevation: stokTukendi ? 1.0 : 3.0,
       shadowColor: Colors.indigo.withOpacity(0.2),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(15.0),
       ),
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(15.0),
-          gradient: LinearGradient(
-            colors: [
-              Colors.white,
-              Colors.indigo.shade50.withOpacity(0.5),
-            ],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(10.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              // Ürün İkonu (GÜNCELLENDİ)
-              // Artık Icon() yerine Image.asset() kullanıyoruz
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: urun.resimYolu.startsWith('http')
-                    ? CachedNetworkImage(
-                        imageUrl: urun.resimYolu,
-                        fit: BoxFit.contain,
-                        placeholder: (context, url) => Center(child: CircularProgressIndicator(color: Colors.indigo)),
-                        errorWidget: (context, url, error) => Icon(
-                          Icons.image_not_supported,
-                          size: 60,
-                          color: Colors.grey[300],
-                        ),
-                      )
-                    : Image.asset(
-                        urun.resimYolu.isNotEmpty ? urun.resimYolu : 'assets/images/beypazarı.png',
-                        fit: BoxFit.contain,
-                        errorBuilder: (context, error, stackTrace) {
-                          return Icon(
-                            Icons.image_not_supported,
-                            size: 60,
-                            color: Colors.grey[300],
-                          );
-                        },
+      child: Stack(
+        children: [
+          // Ana kart içeriği
+          Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(15.0),
+              gradient: LinearGradient(
+                colors: stokTukendi
+                    ? [Colors.grey.shade200, Colors.grey.shade100]
+                    : [
+                        Colors.white,
+                        Colors.indigo.shade50.withOpacity(0.5),
+                      ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(10.0),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  // Ürün Görseli
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.all(8.0),
+                      child: Opacity(
+                        opacity: stokTukendi ? 0.4 : 1.0,
+                        child: urun.resimYolu.startsWith('http')
+                          ? CachedNetworkImage(
+                              imageUrl: urun.resimYolu,
+                              fit: BoxFit.contain,
+                              placeholder: (context, url) => Center(child: CircularProgressIndicator(color: Colors.indigo)),
+                              errorWidget: (context, url, error) => Icon(
+                                Icons.image_not_supported,
+                                size: 60,
+                                color: Colors.grey[300],
+                              ),
+                            )
+                          : Image.asset(
+                              urun.resimYolu.isNotEmpty ? urun.resimYolu : 'assets/images/beypazarı.png',
+                              fit: BoxFit.contain,
+                              errorBuilder: (context, error, stackTrace) {
+                                return Icon(
+                                  Icons.image_not_supported,
+                                  size: 60,
+                                  color: Colors.grey[300],
+                                );
+                              },
+                            ),
                       ),
-                ),
-              ),
-              SizedBox(height: 10),
-              // Ürün Adı
-              Text(
-                urun.isim,
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black87,
-                ),
-                textAlign: TextAlign.center,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-              // Fiyat
-              Text(
-                '${urun.fiyat.toStringAsFixed(2)} TL',
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.indigo,
-                ),
-              ),
-              SizedBox(height: 10),
-              // Miktar Kontrol Butonları (Aynı)
-              if (miktar == 0)
-                ElevatedButton(
-                  onPressed: onEkle,
-                  child: Text('Sepete Ekle'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.indigo,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
                     ),
                   ),
-                )
-              else
-                Container(
-                  decoration: BoxDecoration(
-                    color: Colors.indigo.shade50,
-                    borderRadius: BorderRadius.circular(10),
+                  SizedBox(height: 10),
+                  // Ürün Adı
+                  Text(
+                    urun.isim,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: stokTukendi ? Colors.grey : Colors.black87,
+                    ),
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      IconButton(
-                        icon: Icon(Icons.remove, color: Colors.indigo),
-                        onPressed: onCikar,
+                  // Fiyat
+                  Text(
+                    '${urun.fiyat.toStringAsFixed(2)} TL',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: stokTukendi ? Colors.grey : Colors.indigo,
+                    ),
+                  ),
+                  SizedBox(height: 10),
+                  // Stok durumuna göre buton
+                  if (stokTukendi)
+                    Container(
+                      width: double.infinity,
+                      padding: EdgeInsets.symmetric(vertical: 10),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade300,
+                        borderRadius: BorderRadius.circular(10),
                       ),
-                      Text(
-                        '$miktar',
+                      child: Text(
+                        'TÜKENDI',
+                        textAlign: TextAlign.center,
                         style: TextStyle(
-                          fontSize: 18,
+                          fontSize: 14,
                           fontWeight: FontWeight.bold,
-                          color: Colors.black87,
+                          color: Colors.grey.shade600,
+                          letterSpacing: 1.2,
                         ),
                       ),
-                      IconButton(
-                        icon: Icon(Icons.add, color: Colors.indigo),
-                        onPressed: onEkle,
+                    )
+                  else if (miktar == 0)
+                    ElevatedButton(
+                      onPressed: onEkle,
+                      child: Text('Sepete Ekle'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.indigo,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
                       ),
-                    ],
+                    )
+                  else
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.indigo.shade50,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children: [
+                          IconButton(
+                            icon: Icon(Icons.remove, color: Colors.indigo),
+                            onPressed: onCikar,
+                          ),
+                          Text(
+                            '$miktar',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black87,
+                            ),
+                          ),
+                          IconButton(
+                            icon: Icon(Icons.add, color: Colors.indigo),
+                            onPressed: onEkle,
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          // TÜKENDI banner (sağ üst köşe)
+          if (stokTukendi)
+            Positioned(
+              top: 8,
+              right: 8,
+              child: Container(
+                padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade400,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  'TÜKENDI',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 0.5,
                   ),
                 ),
-            ],
-          ),
-        ),
+              ),
+            ),
+        ],
       ),
     );
   }

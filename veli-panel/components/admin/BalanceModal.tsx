@@ -7,8 +7,11 @@ interface BalanceModalProps {
     onClose: () => void;
     onConfirm: (amount: number) => Promise<void>;
     onSetBalance: (newBalance: number) => Promise<void>;
+    onKartUcreti: (tutar: number) => Promise<void>;
     studentName: string;
     currentBalance: number;
+    toplamKartUcreti?: number;
+    kartUcretiSayisi?: number;
 }
 
 export default function BalanceModal({
@@ -16,18 +19,30 @@ export default function BalanceModal({
     onClose,
     onConfirm,
     onSetBalance,
+    onKartUcreti,
     studentName,
-    currentBalance
+    currentBalance,
+    toplamKartUcreti = 0,
+    kartUcretiSayisi = 0,
 }: BalanceModalProps) {
     const [amount, setAmount] = useState('');
     const [mode, setMode] = useState<'add' | 'set'>('add');
     const [loading, setLoading] = useState(false);
+
+    // Kart ücreti state'leri
+    const [kartUcretiEditing, setKartUcretiEditing] = useState(false);
+    const [kartUcretiInput, setKartUcretiInput] = useState('');
+    const [kartUcretiLoading, setKartUcretiLoading] = useState(false);
+    const [kartUcretiError, setKartUcretiError] = useState('');
 
     if (!isOpen) return null;
 
     const handleClose = () => {
         setAmount('');
         setMode('add');
+        setKartUcretiEditing(false);
+        setKartUcretiInput('');
+        setKartUcretiError('');
         onClose();
     };
 
@@ -41,7 +56,6 @@ export default function BalanceModal({
             setLoading(true);
             await onConfirm(numAmount);
         } else {
-            // set mode - can be any value including 0 or negative
             setLoading(true);
             await onSetBalance(numAmount);
         }
@@ -52,9 +66,27 @@ export default function BalanceModal({
         onClose();
     };
 
+    const handleKartUcretiOnayla = async () => {
+        const tutar = parseFloat(kartUcretiInput);
+        if (isNaN(tutar) || tutar <= 0) {
+            setKartUcretiError('Geçerli bir tutar girin.');
+            return;
+        }
+        setKartUcretiError('');
+        setKartUcretiLoading(true);
+        await onKartUcreti(tutar);
+        setKartUcretiLoading(false);
+        setKartUcretiEditing(false);
+        setKartUcretiInput('');
+    };
+
     const preview = mode === 'add'
         ? currentBalance + (parseFloat(amount) || 0)
         : parseFloat(amount) !== undefined && amount !== '' ? parseFloat(amount) : currentBalance;
+
+    const kartFarki = kartUcretiInput !== ''
+        ? parseFloat(kartUcretiInput)
+        : 0;
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
@@ -65,8 +97,111 @@ export default function BalanceModal({
                     <p className="text-sm text-gray-500 mt-1">{studentName}</p>
                 </div>
 
-                {/* Current Balance Display */}
-                <div className="px-6 pt-5">
+                <div className="px-6 pt-5 space-y-3">
+                    {/* ── Kart Ücreti Bölümü ── */}
+                    <div className="rounded-xl border border-gray-200 bg-gray-50 overflow-hidden">
+                        <div className="flex items-center justify-between px-4 py-3">
+                            <div className="flex items-center gap-2">
+                                {/* Kart ikonu */}
+                                <svg className="w-4 h-4 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2"
+                                        d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+                                </svg>
+                                <span className="text-sm font-medium text-gray-600">
+                                    Kart Ücreti
+                                    {kartUcretiSayisi > 0 && (
+                                        <span className="ml-1.5 text-xs text-gray-400">
+                                            ({kartUcretiSayisi}. kart)
+                                        </span>
+                                    )}
+                                </span>
+                            </div>
+
+                            {!kartUcretiEditing ? (
+                                <div className="flex items-center gap-3">
+                                    <span className="text-base font-bold text-amber-600">
+                                        {toplamKartUcreti.toFixed(2)} ₺
+                                    </span>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setKartUcretiEditing(true);
+                                            setKartUcretiInput('');
+                                            setKartUcretiError('');
+                                        }}
+                                        title="Yeni kart tanımla"
+                                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200 rounded-lg hover:bg-amber-100 transition-colors"
+                                    >
+                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2"
+                                                d="M12 4v16m8-8H4" />
+                                        </svg>
+                                        Yeni Kart
+                                    </button>
+                                </div>
+                            ) : (
+                                <div className="flex items-center gap-2">
+                                    <div className="relative">
+                                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-medium">₺</span>
+                                        <input
+                                            type="number"
+                                            step="any"
+                                            min="0.01"
+                                            value={kartUcretiInput}
+                                            onChange={(e) => {
+                                                setKartUcretiInput(e.target.value);
+                                                setKartUcretiError('');
+                                            }}
+                                            placeholder="0.00"
+                                            className="w-36 pl-7 pr-3 py-1.5 text-sm font-bold bg-white border border-amber-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400/30 focus:border-amber-400"
+                                            autoFocus
+                                        />
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={handleKartUcretiOnayla}
+                                        disabled={kartUcretiLoading || kartUcretiInput === ''}
+                                        className="px-3 py-1.5 text-xs font-semibold bg-amber-500 text-white rounded-lg hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                    >
+                                        {kartUcretiLoading ? '...' : 'Onayla'}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setKartUcretiEditing(false);
+                                            setKartUcretiInput('');
+                                            setKartUcretiError('');
+                                        }}
+                                        className="px-2 py-1.5 text-xs text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                                    >
+                                        ✕
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Hata mesajı */}
+                        {kartUcretiError && (
+                            <div className="px-4 pb-3 text-xs text-red-600 font-medium">
+                                ⚠️ {kartUcretiError}
+                            </div>
+                        )}
+
+                        {/* Önizleme: fark hesabı */}
+                        {kartUcretiEditing && kartUcretiInput !== '' && !isNaN(parseFloat(kartUcretiInput)) && kartFarki > 0 && (
+                            <div className="px-4 pb-3 flex items-center gap-2 text-xs text-amber-700">
+                                <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                <span>
+                                    <strong>{kartUcretiSayisi + 1}. Kart</strong> için{' '}
+                                    <strong>{kartFarki.toFixed(2)} ₺</strong> kaydedilecek
+                                </span>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* ── Mevcut Bakiye ── */}
                     <div className="flex items-center justify-between bg-gray-50 rounded-xl px-4 py-3 border border-gray-200">
                         <span className="text-sm font-medium text-gray-500">Mevcut Bakiye</span>
                         <span className={`text-lg font-bold ${currentBalance < 0 ? 'text-red-600' : 'text-green-600'}`}>

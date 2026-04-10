@@ -93,28 +93,30 @@ export default function AnalyticsCharts({ weeklyData, monthlyData, revenueTrend 
                             <p className="text-xs text-slate-400">Bu haftanın popüler ürünleri</p>
                         </div>
                     </div>
-                    <div className="h-[320px]">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={weeklyData} layout="vertical" margin={{ top: 0, right: 70, left: 10, bottom: 0 }}>
-                                <CartesianGrid strokeDasharray="3 3" horizontal={false} vertical={false} />
-                                <XAxis type="number" hide />
-                                <YAxis
-                                    type="category"
-                                    dataKey="name"
-                                    tick={{ fontSize: 12, fill: COLORS.text, fontWeight: 500 }}
-                                    width={100}
-                                    axisLine={false}
-                                    tickLine={false}
-                                />
-                                <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(99, 102, 241, 0.04)' }} />
-                                <Bar dataKey="value" radius={[0, 8, 8, 0]} barSize={28}>
-                                    {weeklyData.map((entry, index) => (
-                                        <Cell key={`cell-${index}`} fill={WEEKLY_GRADIENT[index] || '#e2e8f0'} />
-                                    ))}
-                                    <LabelList dataKey="value" content={renderCustomBarLabel} />
-                                </Bar>
-                            </BarChart>
-                        </ResponsiveContainer>
+                    <div className="h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                        <div style={{ height: Math.max(weeklyData.length * 45, 400) }} className="w-full">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={weeklyData} layout="vertical" margin={{ top: 0, right: 70, left: 10, bottom: 0 }}>
+                                    <CartesianGrid strokeDasharray="3 3" horizontal={false} vertical={false} />
+                                    <XAxis type="number" hide />
+                                    <YAxis
+                                        type="category"
+                                        dataKey="name"
+                                        tick={{ fontSize: 12, fill: COLORS.text, fontWeight: 500 }}
+                                        width={140}
+                                        axisLine={false}
+                                        tickLine={false}
+                                    />
+                                    <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(99, 102, 241, 0.04)' }} />
+                                    <Bar dataKey="value" radius={[0, 8, 8, 0]} barSize={28}>
+                                        {weeklyData.map((entry, index) => (
+                                            <Cell key={`cell-${index}`} fill={WEEKLY_GRADIENT[index % WEEKLY_GRADIENT.length] || '#e2e8f0'} />
+                                        ))}
+                                        <LabelList dataKey="value" content={renderCustomBarLabel} />
+                                    </Bar>
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </div>
                     </div>
                 </div>
 
@@ -131,28 +133,30 @@ export default function AnalyticsCharts({ weeklyData, monthlyData, revenueTrend 
                             <p className="text-xs text-slate-400">Bu ayın popüler ürünleri</p>
                         </div>
                     </div>
-                    <div className="h-[320px]">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={monthlyData} layout="vertical" margin={{ top: 0, right: 70, left: 10, bottom: 0 }}>
-                                <CartesianGrid strokeDasharray="3 3" horizontal={false} vertical={false} />
-                                <XAxis type="number" hide />
-                                <YAxis
-                                    type="category"
-                                    dataKey="name"
-                                    tick={{ fontSize: 12, fill: COLORS.text, fontWeight: 500 }}
-                                    width={100}
-                                    axisLine={false}
-                                    tickLine={false}
-                                />
-                                <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(139, 92, 246, 0.04)' }} />
-                                <Bar dataKey="value" radius={[0, 8, 8, 0]} barSize={28}>
-                                    {monthlyData.map((entry, index) => (
-                                        <Cell key={`cell-${index}`} fill={MONTHLY_GRADIENT[index] || '#e2e8f0'} />
-                                    ))}
-                                    <LabelList dataKey="value" content={renderCustomBarLabel} />
-                                </Bar>
-                            </BarChart>
-                        </ResponsiveContainer>
+                    <div className="h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                        <div style={{ height: Math.max(monthlyData.length * 45, 400) }} className="w-full">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={monthlyData} layout="vertical" margin={{ top: 0, right: 70, left: 10, bottom: 0 }}>
+                                    <CartesianGrid strokeDasharray="3 3" horizontal={false} vertical={false} />
+                                    <XAxis type="number" hide />
+                                    <YAxis
+                                        type="category"
+                                        dataKey="name"
+                                        tick={{ fontSize: 12, fill: COLORS.text, fontWeight: 500 }}
+                                        width={140}
+                                        axisLine={false}
+                                        tickLine={false}
+                                    />
+                                    <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(139, 92, 246, 0.04)' }} />
+                                    <Bar dataKey="value" radius={[0, 8, 8, 0]} barSize={28}>
+                                        {monthlyData.map((entry, index) => (
+                                            <Cell key={`cell-${index}`} fill={MONTHLY_GRADIENT[index % MONTHLY_GRADIENT.length] || '#e2e8f0'} />
+                                        ))}
+                                        <LabelList dataKey="value" content={renderCustomBarLabel} />
+                                    </Bar>
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </div>
                     </div>
                 </div>
             </div>

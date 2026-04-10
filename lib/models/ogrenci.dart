@@ -5,6 +5,7 @@ class Ogrenci {
   String sinif;
   double bakiye;
   List<Islem> islemGecmisi;
+  String? tip;     // 'Personel' veya 'Öğrenci'
 
   Ogrenci({
     required this.kartID,
@@ -13,6 +14,7 @@ class Ogrenci {
     required this.sinif,
     this.bakiye = 0.0,
     List<Islem>? islemGecmisi,
+    this.tip,
   }) : docID = docID ?? kartID,
        islemGecmisi = islemGecmisi ?? [];
 }
@@ -23,6 +25,7 @@ class Islem {
   double tutar;
   String aciklama;
   List<String>? urunler; // Satın alınan ürünler
+  String? islemFotografi; // İşlem anındaki fotoğraf yolu
 
   Islem({
     required this.tarih,
@@ -30,5 +33,6 @@ class Islem {
     required this.tutar,
     required this.aciklama,
     this.urunler,
+    this.islemFotografi,
   });
 }
