@@ -81,7 +81,15 @@ class VeriYoneticisi extends ChangeNotifier {
                 tip: islem['tip'],
                 tutar: (islem['tutar'] as num).toDouble(),
                 aciklama: islem['aciklama'],
-                urunler: (islem['urunler'] as List?)?.cast<String>(),
+                toplamMaliyet: islem['toplamMaliyet'] != null
+                    ? (islem['toplamMaliyet'] as num).toDouble()
+                    : null,
+                 urunler: (islem['urunler'] as List?)?.map((u) {
+                  // Legacy support: old records stored plain strings like 'Eti Canga (x2)'
+                  if (u is String) return u;
+                  // New format: structured Map objects
+                  return UrunKalemi.fromMap(Map<String, dynamic>.from(u as Map));
+                }).toList(),
                 islemFotografi: islem['islemFotografi'],
               );
             }).toList() ?? [];
@@ -162,6 +170,7 @@ class VeriYoneticisi extends ChangeNotifier {
               id: doc.id,
               isim: data['ad'] ?? 'İsimsiz Ürün',
               fiyat: (data['fiyat'] as num?)?.toDouble() ?? 0.0,
+              maliyet: (data['maliyet'] as num?)?.toDouble() ?? 0.0,
               resimYolu: data['resimURL'] ?? '',
               kategori: data['kategori'] ?? 'Diğer',
               stok: (data['stok'] as int?) ?? 0,
@@ -243,36 +252,45 @@ class VeriYoneticisi extends ChangeNotifier {
       final docID = ogrenciler[kartID]?.docID ?? kartID;
       final docRef = _firestore.collection('ogrenciler').doc(docID);
       
-      // Satılan ürünlerin isimleri ve stok güncellemeleri
-      WriteBatch batch = _firestore.batch();
-      
       print('💳 Ödeme Yapılıyor: Kart: $kartID, Tutar: $tutar');
       
-      // Bakiye düşme işlemi
+      // ── Snapshot: compute exact COGS and build detailed description ──
+      double toplamMaliyet = 0.0;
+      for (var item in sepet) {
+        toplamMaliyet += item.urun.maliyet * item.miktar;
+      }
+
+      // Dynamic aciklama: "Eti Canga (x1), Su (x2)"
+      final aciklama = sepet
+          .map((item) => '${item.urun.isim} (x${item.miktar})')
+          .join(', ');
+
+      // Build structured urunler list — the authoritative source for ALL downstream reads
+      final List<Map<String, dynamic>> urunlerYapili = sepet.map((item) => {
+        'id': item.urun.id ?? '',
+        'ad': item.urun.isim,
+        'miktar': item.miktar,
+        'birimFiyat': item.urun.fiyat,
+        'toplamTutar': item.urun.fiyat * item.miktar,
+      }).toList();
+
       final islem = {
         'tarih': Timestamp.now(),
         'tip': 'Harcama',
-        'tutar': -tutar, // Negatif tutar (Harcama)
-        'aciklama': 'Kantin Alışverişi',
-        'urunler': sepet.map((item) => "${item.urun.isim} (x${item.miktar})").toList(),
+        'tutar': tutar, // Positive tutar as requested
+        'aciklama': aciklama,
+        'toplamMaliyet': toplamMaliyet, // ✅ Immutable cost snapshot
+        'urunler': urunlerYapili, // ✅ Structured objects — NOT plain strings
+        'isCancelled': false, // Explicitly false for new valid records
         if (islemFotografiYolu != null) 'islemFotografi': islemFotografiYolu
       };
 
-      batch.update(docRef, {
-        'bakiye': FieldValue.increment(-tutar),
-        'islemGecmisi': FieldValue.arrayUnion([islem])
-      });
+      await _firestore.runTransaction((transaction) async {
+        // 1. Snapshot / Read current stock for all items
+        Map<String, DocumentReference> urunRefs = {};
+        Map<String, DocumentSnapshot> urunSnaps = {};
 
-      // İstatistik ve Stok Güncelleme - Batch işlemine ekle
-      final istatistikRef = _firestore.collection('istatistikler').doc('urunSatislari');
-      Map<String, dynamic> istatistikUpdate = {};
-
-      for (var item in sepet) {
-        // İstatistik güncellemesi
-        istatistikUpdate[item.urun.isim] = FieldValue.increment(item.miktar);
-        
-        // Stok düşme işlemi
-        try {
+        for (var item in sepet) {
             String? urunId = item.urun.id;
             
             // ID yoksa isimden bul
@@ -286,34 +304,65 @@ class VeriYoneticisi extends ChangeNotifier {
 
             if (urunId != null && urunId.isNotEmpty) {
                 final urunRef = _firestore.collection('urunler').doc(urunId);
-                batch.update(urunRef, {
+                urunRefs[item.urun.isim] = urunRef;
+                urunSnaps[item.urun.isim] = await transaction.get(urunRef);
+            }
+        }
+
+        // 2. Strict Validation: Check stock
+        for (var item in sepet) {
+            if (urunSnaps.containsKey(item.urun.isim)) {
+                final snap = urunSnaps[item.urun.isim]!;
+                if (snap.exists) {
+                    final veriler = snap.data() as Map<String, dynamic>?;
+                    int currentStock = veriler?['stok'] ?? 0;
+                    if (currentStock < item.miktar) {
+                        throw Exception('Yetersiz Stok: ${item.urun.isim}');
+                    }
+                }
+            }
+        }
+
+        // 3. Perform Updates within transaction
+        transaction.update(docRef, {
+          'bakiye': FieldValue.increment(-tutar),
+          'islemGecmisi': FieldValue.arrayUnion([islem])
+        });
+
+        final istatistikRef = _firestore.collection('istatistikler').doc('urunSatislari');
+        Map<String, dynamic> istatistikUpdate = {};
+
+        for (var item in sepet) {
+            // İstatistik güncellemesi
+            istatistikUpdate[item.urun.isim] = FieldValue.increment(item.miktar);
+            
+            // Stok düşme işlemi
+            if (urunRefs.containsKey(item.urun.isim)) {
+                transaction.update(urunRefs[item.urun.isim]!, {
                     'stok': FieldValue.increment(-item.miktar)
                 });
             } else {
                 print('⚠️ Stok düşülecek ürün ID bulunamadı: ${item.urun.isim}');
             }
-        } catch (e) {
-            print('⚠️ Stok düşme hatası (${item.urun.isim}): $e');
         }
-      }
 
-      if (istatistikUpdate.isNotEmpty) {
-        batch.set(istatistikRef, istatistikUpdate, SetOptions(merge: true));
-      }
-
-      // Tüm işlemleri tek seferde uygula
-      await batch.commit();
+        if (istatistikUpdate.isNotEmpty) {
+            transaction.set(istatistikRef, istatistikUpdate, SetOptions(merge: true));
+        }
+      });
 
       // Yerel istatistikleri güncelle
-       for (var item in sepet) {
+      for (var item in sepet) {
         urunSatislari[item.urun.isim] = (urunSatislari[item.urun.isim] ?? 0) + item.miktar;
       }
-      
       
       notifyListeners(); // İstatistikler güncellendiği için
       return true;
     } catch (e) {
       print('❌ Ödeme hatası: $e');
+      if (e.toString().contains('Yetersiz Stok')) {
+        rethrow;
+      }
       return false;
     }
   }
@@ -375,6 +424,7 @@ class VeriYoneticisi extends ChangeNotifier {
             'tip': islem.tip,
             'tutar': islem.tutar,
             'aciklama': islem.aciklama,
+            if (islem.toplamMaliyet != null) 'toplamMaliyet': islem.toplamMaliyet,
             'urunler': islem.urunler,
             'islemFotografi': islem.islemFotografi,
           }).toList(),
@@ -401,7 +451,13 @@ class VeriYoneticisi extends ChangeNotifier {
               tip: islem['tip'],
               tutar: islem['tutar'],
               aciklama: islem['aciklama'],
-              urunler: (islem['urunler'] as List?)?.cast<String>(),
+              toplamMaliyet: islem['toplamMaliyet'] != null
+                  ? (islem['toplamMaliyet'] as num).toDouble()
+                  : null,
+              urunler: (islem['urunler'] as List?)?.map((u) {
+                if (u is String) return u;
+                return UrunKalemi.fromMap(Map<String, dynamic>.from(u as Map));
+              }).toList(),
               islemFotografi: islem['islemFotografi'],
             );
           }).toList();
@@ -445,8 +501,9 @@ class VeriYoneticisi extends ChangeNotifier {
               'tip': 'Harcama',
               'tutar': islem['tutar'] is double && (islem['tutar'] as double) > 0 
                   ? -(islem['tutar'] as double) 
-                  : islem['tutar'], // Yüklerken zaten negatif değilse negatif yap
+                  : islem['tutar'],
               'aciklama': islem['aciklama'],
+              'toplamMaliyet': islem['toplamMaliyet'] ?? 0.0, // preserve cost snapshot
               'urunler': islem['urunler'],
               if (islem['islemFotografi'] != null) 'islemFotografi': islem['islemFotografi']
             }]),
@@ -454,8 +511,20 @@ class VeriYoneticisi extends ChangeNotifier {
           
           if (islem['urunler'] != null) {
             for (var urun in (islem['urunler'] as List)) {
-              String urunIsmi = urun.split(' (x')[0];
-              urunSatislari[urunIsmi] = (urunSatislari[urunIsmi] ?? 0) + 1;
+              String urunIsmi;
+              int qty = 1;
+              if (urun is Map) {
+                // New structured format
+                urunIsmi = urun['ad'] ?? '';
+                qty = (urun['miktar'] as num?)?.toInt() ?? 1;
+              } else {
+                // Legacy string format: 'ProductName (x2)'
+                final str = urun.toString();
+                final match = RegExp(r'^(.*?) \(x(\d+)\)$').firstMatch(str);
+                urunIsmi = match != null ? match.group(1)!.trim() : str.split(' (x')[0];
+                qty = match != null ? int.tryParse(match.group(2)!) ?? 1 : 1;
+              }
+              urunSatislari[urunIsmi] = (urunSatislari[urunIsmi] ?? 0) + qty;
             }
             await _firestore.collection('istatistikler').doc('urunSatislari').set(
               urunSatislari,

@@ -522,7 +522,8 @@ class _UrunListesiEkraniState extends State<UrunListesiEkrani> {
   DateTime _lastKeyPress = DateTime.now();
   
   Timer? _debounceTimer;
-  
+  Timer? _cartIdleTimer; // 5 dakika boşta kalırsa sepeti otomatik temizle
+
   String? secilenKategori; // Hangi kategori seçili
   bool _verilerYuklendi = false; // Firebase verileri yüklendi mi?
   
@@ -638,6 +639,41 @@ class _UrunListesiEkraniState extends State<UrunListesiEkrani> {
     });
   }
 
+  // ── Sepet boşta kalma zamanlayıcısı ──────────────────────────────────────
+
+  /// Sepete her ürün eklenişinde veya miktarı değiştiğinde çağrılır.
+  /// 5 dakikalık geri sayımı sıfırlar.
+  void _resetCartTimer() {
+    _cartIdleTimer?.cancel();
+    _cartIdleTimer = Timer(const Duration(minutes: 5), () {
+      if (!mounted) return;
+      print('⏰ Sepet 5 dakika boşta kaldı — otomatik temizleniyor.');
+      setState(() {
+        sepet.clear();
+        toplamTutar = 0.0;
+        secilenKategori = null;
+      });
+      // Kullanıcıya bilgi ver
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Sepet zaman aşımından dolayı temizlendi.'),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 4),
+          ),
+        );
+      }
+    });
+  }
+
+  /// Başarılı ödeme veya manuel temizlemede zamanlayıcıyı durdurur.
+  void _cancelCartTimer() {
+    _cartIdleTimer?.cancel();
+    _cartIdleTimer = null;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+
   @override
   void dispose() {
     // Sistem tuşlarını geri aç
@@ -647,6 +683,7 @@ class _UrunListesiEkraniState extends State<UrunListesiEkrani> {
     );
     
     _debounceTimer?.cancel();
+    _cartIdleTimer?.cancel(); // Boşta kalma zamanlayıcısını temizle
     _kartOkuyucuController.dispose();
     _focusNode.dispose();
     super.dispose();
@@ -690,6 +727,7 @@ class _UrunListesiEkraniState extends State<UrunListesiEkrani> {
       }
     });
     hesaplaToplamTutar();
+    _resetCartTimer(); // Boşta kalma zamanlayıcısını sıfırla
   }
 
   void sepettenCikar(Urun urun) {
@@ -703,6 +741,12 @@ class _UrunListesiEkraniState extends State<UrunListesiEkrani> {
         }
       });
       hesaplaToplamTutar();
+      // Sepet tamamen boşaldıysa zamanlayıcıyı iptal et, yoksa sıfırla
+      if (sepet.isEmpty) {
+        _cancelCartTimer();
+      } else {
+        _resetCartTimer();
+      }
     }
   }
 
@@ -719,6 +763,7 @@ class _UrunListesiEkraniState extends State<UrunListesiEkrani> {
       sepet.clear();
     });
     hesaplaToplamTutar();
+    _cancelCartTimer(); // Manuel temizlemede zamanlayıcıyı durdur
   }
 
   // Bakiye sorgula butonu
@@ -1534,6 +1579,7 @@ class _UrunListesiEkraniState extends State<UrunListesiEkrani> {
               
               // Eğer refresh yapılacaksa sepeti temizle ve kategoriler sayfasına dön
               if (refreshYap) {
+                _cancelCartTimer(); // Başarılı ödemede zamanlayıcıyı iptal et
                 Future.delayed(Duration(milliseconds: 100), () {
                   setState(() {
                     sepet.clear();

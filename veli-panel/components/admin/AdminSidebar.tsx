@@ -57,6 +57,15 @@ export default function AdminSidebar() {
             )
         },
         {
+            name: 'Finans',
+            href: '/admin/finans',
+            icon: (
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4v16a1 1 0 001 1h14a1 1 0 001-1V4" />
+                </svg>
+            )
+        },
+        {
             name: 'Ürünler',
             href: '/admin/urunler',
             icon: (

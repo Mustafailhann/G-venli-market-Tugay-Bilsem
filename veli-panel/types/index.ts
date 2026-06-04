@@ -33,6 +33,7 @@ export interface KartUcreti {
     tutar: number;      // Bu kartta alınan ücret (örn: 50)
     islemNo: number;    // Kaçıncı kart (1, 2, 3...)
     aciklama: string;   // "1. Kart: 50.00 ₺"
+    isCancelled?: boolean; // İptal edildi mi?
 }
 
 export interface Ogrenci {
@@ -51,13 +52,32 @@ export interface Ogrenci {
     unvan?: string; // Personele özel unvan (Örn: Müdür, Öğretmen)
 }
 
+/**
+ * Structured product line-item — written by the POS tablet for every checkout.
+ * Replaces the legacy string format (e.g. "Eti Canga (x2)").
+ */
+export interface UrunKalemi {
+    id: string;           // Firestore document ID of the product
+    ad: string;           // Product name snapshot at time of purchase
+    miktar: number;       // Quantity purchased
+    birimFiyat: number;   // Unit selling price at time of purchase
+    toplamTutar: number;  // miktar × birimFiyat
+}
+
 export interface Islem {
     tarih: Timestamp;
     tip: 'Bakiye Yükleme' | 'Ödeme' | 'Harcama';
     tutar: number;
     aciklama: string;
-    urunler?: string[];
-    islemFotografi?: string; // Opsiyonel, işlemin anlık kamera fotoğrafı yolu
+    toplamMaliyet?: number;  // ✅ Immutable COGS snapshot — written at checkout. Absent on legacy records.
+    /**
+     * New format (post 2026-06): Array of UrunKalemi objects with full price breakdown.
+     * Legacy format (pre 2026-06): Array of strings like "Eti Canga (x2)".
+     * Always check with: Array.isArray(urunler) && typeof urunler[0] === 'object'
+     */
+    urunler?: (UrunKalemi | string)[];
+    islemFotografi?: string;
+    isCancelled?: boolean;
 }
 
 /** Flutter 'Harcama', Web 'Ödeme' — ikisini de harcama olarak kabul et. Ayrıca tutar negatifse de harcamadır. */
@@ -73,8 +93,26 @@ export interface Urun {
     id: string; // Firestore Document ID
     ad: string;
     fiyat: number;
+    maliyet?: number; // Birim maliyet (unit cost) — varsayılan: 0
     resimURL?: string;
     kategori?: string;
     stok: number;
     olusturmaTarihi: Timestamp;
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Stock Ledger — every manual stock change is logged here
+// ─────────────────────────────────────────────────────────────────────
+export type StokIslemTipi = 'Stok Ekleme / Giriş' | 'Stok Düzeltme / Çıkış';
+
+export interface StokHareketi {
+    id: string;                 // Firestore Document ID
+    urunId: string;             // ID of the affected product
+    urunAdi: string;            // Product name snapshot
+    miktarDegisimi: number;     // Signed difference: positive = inflow, negative = correction
+    eskiStok: number;           // Stock value before the change
+    yeniStok: number;           // Stock value after the change
+    tarih: Timestamp;           // Server timestamp of the operation
+    islemTipi: StokIslemTipi;   // 'Stok Ekleme / Giriş' | 'Stok Düzeltme / Çıkış'
+    islemYapan: string;         // Admin display name — defaults to 'Sistem Yöneticisi'
 }

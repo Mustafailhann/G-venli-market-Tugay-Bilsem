@@ -4,11 +4,11 @@ import { useState, useEffect } from 'react';
 import { getAllStudents } from '@/lib/admin';
 import { getProducts } from '@/lib/products';
 import AnalyticsCharts from '@/components/admin/AnalyticsCharts';
-import { Ogrenci, Urun, isHarcama } from '@/types';
+import { Ogrenci, Urun, UrunKalemi, isHarcama } from '@/types';
 import { Timestamp } from 'firebase/firestore';
 import * as XLSX from 'xlsx';
 import { auth, db } from '@/lib/firebase';
-import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, getDocs, onSnapshot, orderBy } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
 
 export default function AdminDashboardPage() {
@@ -23,7 +23,14 @@ export default function AdminDashboardPage() {
         revenueTrend: [] as { date: string; amount: number }[],
         lowStockProducts: [] as Urun[],
         negativeBalanceStudents: [] as Ogrenci[],
-        allSales: [] as { tarih: string; ogrenci: string; urun: string; adet: number; tutar: number }[],
+        allSales: [] as {
+            tarih: string;
+            ogrenci: string;
+            urun: string;
+            adet: number;
+            birimFiyat: number;
+            toplamTutar: number;
+        }[],
     });
     const [products, setProducts] = useState<Urun[]>([]);
     const [loading, setLoading] = useState(true);
@@ -66,9 +73,22 @@ export default function AdminDashboardPage() {
     }, []);
 
     useEffect(() => {
-        const fetchData = async () => {
-            setLoading(true);
-            const [students, productList] = await Promise.all([getAllStudents(), getProducts()]);
+        setLoading(true);
+
+        const studentsQuery = query(collection(db, 'ogrenciler'));
+        const productsQuery = query(collection(db, 'urunler'), orderBy('ad'));
+
+        let currentStudents: Ogrenci[] = [];
+        let currentProducts: Urun[] = [];
+        let studentsLoaded = false;
+        let productsLoaded = false;
+
+        const updateStats = () => {
+            if (!studentsLoaded || !productsLoaded) return;
+
+            const students = currentStudents;
+            const productList = currentProducts;
+
             setProducts(productList);
 
             // Calculate Stats
@@ -92,7 +112,7 @@ export default function AdminDashboardPage() {
             let weeklyRevenueTotal = 0;
             let monthlyRevenueTotal = 0;
 
-            const allSales: { tarih: string; ogrenci: string; urun: string; adet: number; tutar: number }[] = [];
+            const allSales: { tarih: string; ogrenci: string; urun: string; adet: number; birimFiyat: number; toplamTutar: number }[] = [];
 
             // Initialize last 7 days for revenue trend
             for (let i = 6; i >= 0; i--) {
@@ -105,7 +125,7 @@ export default function AdminDashboardPage() {
                 if (student.islemGecmisi) {
                     student.islemGecmisi.forEach(islem => {
                         // Convert Timestamp to Date
-                        const islemDate = islem.tarih instanceof Timestamp ? islem.tarih.toDate() : new Date(islem.tarih);
+                        const islemDate = islem.tarih instanceof Timestamp ? islem.tarih.toDate() : new Date(islem.tarih as any);
 
                         if (isHarcama(islem.tip, islem.tutar)) {
                             const amount = Math.abs(islem.tutar);
@@ -131,28 +151,44 @@ export default function AdminDashboardPage() {
                                 }
                             }
 
+                            // ── Product-level rows for Excel export ──────────────────────────
+                            if (islem.urunler && islem.urunler.length > 0) {
+                                islem.urunler.forEach(urunEntry => {
+                                    let name: string;
+                                    let qty: number;
+                                    let birimFiyat: number;
+                                    let toplamTutar: number;
 
-                            // Calculate Product Sales
-                            if (islem.urunler) {
-                                islem.urunler.forEach(urun => {
-                                    let name = urun;
-                                    let qty = 1;
-
-                                    const match = urun.match(/^(.*?) \(x(\d+)\)$/);
-                                    if (match) {
-                                        name = match[1].trim();
-                                        qty = parseInt(match[2], 10);
+                                    if (typeof urunEntry === 'object' && urunEntry !== null) {
+                                        // ✅ NEW FORMAT: structured UrunKalemi object
+                                        const kalemi = urunEntry as UrunKalemi;
+                                        name       = kalemi.ad;
+                                        qty        = kalemi.miktar;
+                                        birimFiyat = kalemi.birimFiyat;
+                                        toplamTutar = kalemi.toplamTutar;
+                                    } else {
+                                        // ⚠️ LEGACY FORMAT: "Eti Canga Gold (x2)" string
+                                        const str = urunEntry as string;
+                                        const match = str.match(/^(.*?) \(x(\d+)\)$/);
+                                        name        = match ? match[1].trim() : str;
+                                        qty         = match ? parseInt(match[2], 10) : 1;
+                                        // For legacy records we only have the transaction total;
+                                        // distribute it proportionally across all items in this transaction.
+                                        const legacyItemCount = islem.urunler!.length;
+                                        toplamTutar = parseFloat((amount / legacyItemCount).toFixed(2));
+                                        birimFiyat  = qty > 0 ? parseFloat((toplamTutar / qty).toFixed(2)) : 0;
                                     }
 
-                                    // Collect all sales for Excel export
                                     allSales.push({
                                         tarih: islemDate.toLocaleString('tr-TR'),
                                         ogrenci: student.adSoyad,
                                         urun: name,
                                         adet: qty,
-                                        tutar: amount
+                                        birimFiyat,
+                                        toplamTutar,
                                     });
 
+                                    // Product-level stats (weekly/monthly charts)
                                     if (islemDate >= oneWeekAgo) {
                                         weeklyProducts[name] = (weeklyProducts[name] || 0) + qty;
                                     }
@@ -197,7 +233,22 @@ export default function AdminDashboardPage() {
             setLoading(false);
         };
 
-        fetchData();
+        const unsubStudents = onSnapshot(studentsQuery, (snapshot) => {
+            currentStudents = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Ogrenci));
+            studentsLoaded = true;
+            updateStats();
+        });
+
+        const unsubProducts = onSnapshot(productsQuery, (snapshot) => {
+            currentProducts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Urun));
+            productsLoaded = true;
+            updateStats();
+        });
+
+        return () => {
+            unsubStudents();
+            unsubProducts();
+        };
     }, []);
 
     if (loading) {
@@ -211,17 +262,18 @@ export default function AdminDashboardPage() {
     // Excel export: Satılan Ürünler
     const exportSalesExcel = () => {
         const data = stats.allSales.map(s => ({
-            'Tarih': s.tarih,
-            'Öğrenci': s.ogrenci,
-            'Ürün': s.urun,
-            'Adet': s.adet,
-            'Tutar (₺)': s.tutar
+            'Tarih':          s.tarih,
+            'Öğrenci':        s.ogrenci,
+            'Ürün':           s.urun,
+            'Adet':           s.adet,
+            'Birim Fiyat (₺)': s.birimFiyat,
+            'Toplam Tutar (₺)': s.toplamTutar,
         }));
         const ws = XLSX.utils.json_to_sheet(data);
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, 'Satılan Ürünler');
         // Sütun genişlikleri
-        ws['!cols'] = [{ wch: 20 }, { wch: 25 }, { wch: 20 }, { wch: 8 }, { wch: 12 }];
+        ws['!cols'] = [{ wch: 20 }, { wch: 25 }, { wch: 30 }, { wch: 8 }, { wch: 16 }, { wch: 18 }];
         XLSX.writeFile(wb, `Satilan_Urunler_${new Date().toLocaleDateString('tr-TR')}.xlsx`);
     };
 

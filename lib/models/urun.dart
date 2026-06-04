@@ -4,6 +4,7 @@ class Urun {
   String? id;
   String isim;
   double fiyat;
+  double maliyet; // Birim maliyet (unit cost) — snapshot at checkout
   String resimYolu;
   String kategori;
   int stok;
@@ -12,6 +13,7 @@ class Urun {
     this.id,
     required this.isim,
     required this.fiyat,
+    this.maliyet = 0.0,
     required this.resimYolu,
     required this.kategori,
     this.stok = 0,
@@ -22,6 +24,7 @@ class Urun {
       id: documentId,
       isim: data['ad'] ?? '',
       fiyat: (data['fiyat'] ?? 0).toDouble(),
+      maliyet: (data['maliyet'] ?? 0).toDouble(),
       resimYolu: data['resimURL'] ?? '',
       kategori: data['kategori'] ?? 'Diğer',
       stok: data['stok'] ?? 0,

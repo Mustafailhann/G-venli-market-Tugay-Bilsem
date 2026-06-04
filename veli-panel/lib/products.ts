@@ -7,10 +7,12 @@ import {
     deleteDoc,
     Timestamp,
     query,
-    orderBy
+    orderBy,
+    runTransaction,
+    serverTimestamp,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { Urun } from '@/types';
+import { Urun, StokHareketi, StokIslemTipi } from '@/types';
 
 const COLLECTION_NAME = 'urunler';
 
@@ -71,6 +73,59 @@ export async function deleteProduct(id: string) {
         return { success: true };
     } catch (error: any) {
         console.error('Error deleting product:', error);
+        return { success: false, error: error.message };
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// updateStockWithLedger
+// Wraps the stock update inside a Firestore Transaction to guarantee
+// atomicity and creates an immutable audit entry in `stok_hareketleri`.
+// ─────────────────────────────────────────────────────────────────────
+export async function updateStockWithLedger(
+    productId: string,
+    newStok: number,
+    islemYapan: string = 'Sistem Yöneticisi'
+) {
+    try {
+        const productRef = doc(db, COLLECTION_NAME, productId);
+        const ledgerRef = collection(db, 'stok_hareketleri');
+
+        await runTransaction(db, async (transaction) => {
+            const productSnap = await transaction.get(productRef);
+            if (!productSnap.exists()) throw new Error('Product not found: ' + productId);
+
+            const data = productSnap.data() as Urun;
+            const eskiStok = data.stok ?? 0;
+            const diff = newStok - eskiStok;
+
+            // No change — nothing to do
+            if (diff === 0) return;
+
+            const islemTipi: StokIslemTipi = diff > 0
+                ? 'Stok Ekleme / Giriş'
+                : 'Stok Düzeltme / Çıkış';
+
+            // 1. Update the product document
+            transaction.update(productRef, { stok: newStok });
+
+            // 2. Write immutable ledger entry
+            const ledgerDocRef = doc(ledgerRef);
+            transaction.set(ledgerDocRef, {
+                urunId: productId,
+                urunAdi: data.ad,
+                miktarDegisimi: diff,
+                eskiStok,
+                yeniStok: newStok,
+                tarih: serverTimestamp(),
+                islemTipi,
+                islemYapan,
+            });
+        });
+
+        return { success: true };
+    } catch (error: any) {
+        console.error('Stock ledger update error:', error);
         return { success: false, error: error.message };
     }
 }

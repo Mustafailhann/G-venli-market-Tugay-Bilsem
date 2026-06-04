@@ -11,7 +11,9 @@ import {
     increment,
     arrayUnion,
     deleteDoc,
-    getDoc
+    getDoc,
+    runTransaction,
+    orderBy
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { formatPhoneEmail } from './auth';
@@ -680,5 +682,290 @@ export async function bulkUpsertStudents(
     } catch (err: any) {
         console.error('Error in bulkUpsertStudents:', err);
         return { success: false, inserted, updated, errors: [...errors, err.message] };
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PART 1: Safe Transaction Reversal (no hard deletes)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Marks an islemGecmisi entry as cancelled and atomically adjusts the student's
+ * balance in the opposite direction. The record is never deleted.
+ *
+ * @param studentId  Firestore document ID of the student/personnel
+ * @param islemIndex Zero-based index of the Islem in islemGecmisi array
+ */
+export async function cancelIslem(
+    studentId: string,
+    islemIndex: number
+): Promise<{ success: boolean; error?: string }> {
+    try {
+        const studentRef = doc(db, 'ogrenciler', studentId);
+
+        await runTransaction(db, async (tx) => {
+            const snap = await tx.get(studentRef);
+            if (!snap.exists()) throw new Error('Öğrenci bulunamadı.');
+
+            const data = snap.data();
+            const islemler: Islem[] = data.islemGecmisi || [];
+            const islem = islemler[islemIndex];
+
+            if (!islem) throw new Error('İşlem bulunamadı.');
+            if (islem.isCancelled) throw new Error('Bu işlem zaten iptal edilmiş.');
+
+            // Mark cancelled
+            const updated = islemler.map((item, idx) =>
+                idx === islemIndex ? { ...item, isCancelled: true } : item
+            );
+
+            // Balance adjustment: reverse the original effect
+            // Deposit (+tutar) → subtract tutar
+            // Expense (−tutar or tip Ödeme/Harcama) → add abs(tutar)
+            const originalTutar = islem.tutar;
+            const balanceDelta = -originalTutar; // simply negate it
+
+            tx.update(studentRef, {
+                islemGecmisi: updated,
+                bakiye: increment(balanceDelta)
+            });
+        });
+
+        return { success: true };
+    } catch (error: any) {
+        console.error('cancelIslem error:', error);
+        return { success: false, error: error.message };
+    }
+}
+
+/**
+ * Marks a kartUcretiGecmisi entry as cancelled and atomically subtracts
+ * the amount from toplamKartUcreti. The record is never deleted.
+ *
+ * @param studentId Firestore document ID
+ * @param kuIndex   Zero-based index in kartUcretiGecmisi
+ */
+export async function cancelKartUcreti(
+    studentId: string,
+    kuIndex: number
+): Promise<{ success: boolean; error?: string }> {
+    try {
+        const studentRef = doc(db, 'ogrenciler', studentId);
+
+        await runTransaction(db, async (tx) => {
+            const snap = await tx.get(studentRef);
+            if (!snap.exists()) throw new Error('Öğrenci bulunamadı.');
+
+            const data = snap.data();
+            const list: KartUcreti[] = data.kartUcretiGecmisi || [];
+            const ku = list[kuIndex];
+
+            if (!ku) throw new Error('Kart ücreti kaydı bulunamadı.');
+            if (ku.isCancelled) throw new Error('Bu kart ücreti zaten iptal edilmiş.');
+
+            const updated = list.map((item, idx) =>
+                idx === kuIndex ? { ...item, isCancelled: true } : item
+            );
+
+            tx.update(studentRef, {
+                kartUcretiGecmisi: updated,
+                toplamKartUcreti: increment(-ku.tutar)
+            });
+        });
+
+        return { success: true };
+    } catch (error: any) {
+        console.error('cancelKartUcreti error:', error);
+        return { success: false, error: error.message };
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PART 2: Kasa Giderleri (Operating Expenses / Cash Ledger)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type GiderTuru = 'Müdüre Kasa Teslimi' | 'Benzin / Lojistik' | 'Diğer İşletme Gideri';
+
+export interface KasaGideri {
+    id: string;         // Firestore document ID
+    giderTuru: GiderTuru;
+    tutar: number;
+    aciklama: string;
+    tarih: Timestamp;
+}
+
+export async function addKasaGideri(
+    data: Omit<KasaGideri, 'id' | 'tarih'>
+): Promise<{ success: boolean; id?: string; error?: string }> {
+    try {
+        const docRef = await addDoc(collection(db, 'kasa_giderleri'), {
+            ...data,
+            tarih: Timestamp.now()
+        });
+        return { success: true, id: docRef.id };
+    } catch (error: any) {
+        console.error('addKasaGideri error:', error);
+        return { success: false, error: error.message };
+    }
+}
+
+export async function getKasaGiderleri(): Promise<KasaGideri[]> {
+    try {
+        const q = query(
+            collection(db, 'kasa_giderleri'),
+            orderBy('tarih', 'desc')
+        );
+        const snap = await getDocs(q);
+        return snap.docs.map(d => ({ id: d.id, ...d.data() } as KasaGideri));
+    } catch (error) {
+        console.error('getKasaGiderleri error:', error);
+        return [];
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PART 3: Realized Profit & Loss Aggregation
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface PnlTransaction {
+    tarih: Timestamp;
+    aciklama: string;
+    gelir: number;          // Revenue (sale amount)
+    maliyet: number;        // Exact COGS snapshot (0 for legacy records)
+    brütKar: number;        // gelir - maliyet
+    hasSnapshot: boolean;   // true = exact historical cost; false = legacy record (no cost data)
+}
+
+export interface PnlResult {
+    toplamGelir: number;        // A: Total Realized Revenue (sales + card fees)
+    toplamCOGS: number;         // B: Exact Cost of Goods Sold from cost snapshots
+    toplamOPEX: number;         // C: Total Operating Expenses (kasa_giderleri)
+    netKar: number;             // D: Net Realized Profit = A - B - C
+    transactionCount: number;   // Total number of sales transactions
+    snapshotCount: number;      // Transactions WITH exact cost snapshot
+    legacyCount: number;        // Transactions WITHOUT cost data (pre-snapshotting, COGS=0)
+    kartUcretiToplamı: number;  // Card fees component of revenue
+    satirlar: PnlTransaction[]; // Per-transaction breakdown (latest 50)
+}
+
+/**
+ * Aggregates Realized P&L using IMMUTABLE COST SNAPSHOTS.
+ *
+ * Revenue sources:
+ *   - All students' islemGecmisi (Odeme / Harcama entries) — deposits are EXCLUDED
+ *   - All students' kartUcretiGecmisi (card fees)
+ *
+ * COGS (Satilan Malin Maliyeti):
+ *   - Uses islem.toplamMaliyet (snapshotted at checkout by Flutter) when available — 100% accurate
+ *   - Legacy records without this field → COGS = 0, flagged hasSnapshot=false
+ *   - NO weighted-average estimation. No product collection needed.
+ *
+ * OPEX: All kasa_giderleri records.
+ */
+export async function getRealizedPnlData(): Promise<PnlResult> {
+    try {
+        // Fetch students, personnel, and OPEX in parallel — no product collection needed
+        const [studentsSnap, personnelSnap, giderleriSnap] = await Promise.all([
+            getDocs(query(collection(db, 'ogrenciler'))),
+            getDocs(query(collection(db, 'personeller'))),
+            getDocs(query(collection(db, 'kasa_giderleri'), orderBy('tarih', 'desc'))),
+        ]);
+
+        let toplamSatisGeliri = 0;
+        let toplamCOGS = 0;
+        let kartUcretiToplamı = 0;
+        let transactionCount = 0;
+        let snapshotCount = 0;
+        let legacyCount = 0;
+        const allTransactions: PnlTransaction[] = [];
+
+        // Combine all people (students + personnel) into a single array loop
+        const allProfiles = [...studentsSnap.docs, ...personnelSnap.docs];
+
+        allProfiles.forEach(docSnap => {
+            const data = docSnap.data();
+
+            // Sales — deposits (Bakiye Yukleme) are LIABILITIES, strictly excluded
+            const islemler: Islem[] = data.islemGecmisi || [];
+            for (const islem of islemler) {
+                if (islem.isCancelled) continue;
+                const isHarcamaIslem =
+                    islem.tip === 'Ödeme' ||
+                    islem.tip === 'Harcama' ||
+                    (islem.tutar != null && islem.tutar < 0);
+                if (!isHarcamaIslem) continue;
+
+                const gelir = Math.abs(islem.tutar);
+                transactionCount++;
+                toplamSatisGeliri += gelir;
+
+                // Use exact snapshot; fall back to 0 for pre-snapshot legacy records
+                const hasSnapshot = typeof islem.toplamMaliyet === 'number';
+                const maliyet = hasSnapshot ? (islem.toplamMaliyet as number) : 0;
+                toplamCOGS += maliyet;
+
+                if (hasSnapshot) snapshotCount++;
+                else legacyCount++;
+
+                const isGenericDesc = islem.aciklama === 'Kantin Alışverişi' || !islem.aciklama;
+                const displayDesc = (isGenericDesc && islem.urunler && islem.urunler.length > 0)
+                    ? islem.urunler.join(', ')
+                    : (islem.aciklama || 'Ürün Satışı');
+
+                allTransactions.push({
+                    tarih: islem.tarih,
+                    aciklama: displayDesc,
+                    gelir,
+                    maliyet,
+                    brütKar: gelir - maliyet,
+                    hasSnapshot,
+                });
+            }
+
+            // Card fees — pure service revenue, no COGS
+            const kartUcretleri: KartUcreti[] = data.kartUcretiGecmisi || [];
+            for (const ku of kartUcretleri) {
+                if (ku.isCancelled) continue;
+                kartUcretiToplamı += ku.tutar;
+            }
+        });
+
+        const toplamGelir = toplamSatisGeliri + kartUcretiToplamı;
+
+        let toplamOPEX = 0;
+        giderleriSnap.forEach(d => {
+            const g = d.data();
+            toplamOPEX += g.tutar ?? 0;
+        });
+
+        const netKar = toplamGelir - toplamCOGS - toplamOPEX;
+
+        allTransactions.sort((a, b) => b.tarih.toMillis() - a.tarih.toMillis());
+        const satirlar = allTransactions.slice(0, 50);
+
+        return {
+            toplamGelir,
+            toplamCOGS,
+            toplamOPEX,
+            netKar,
+            transactionCount,
+            snapshotCount,
+            legacyCount,
+            kartUcretiToplamı,
+            satirlar,
+        };
+    } catch (error) {
+        console.error('getRealizedPnlData error:', error);
+        return {
+            toplamGelir: 0,
+            toplamCOGS: 0,
+            toplamOPEX: 0,
+            netKar: 0,
+            transactionCount: 0,
+            snapshotCount: 0,
+            legacyCount: 0,
+            kartUcretiToplamı: 0,
+            satirlar: [],
+        };
     }
 }
