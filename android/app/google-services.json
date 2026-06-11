@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "851412613125",
+    "project_id": "okul-otomat-projesi",
+    "storage_bucket": "okul-otomat-projesi.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:851412613125:android:bf84789996fe2002ae446c",
+        "android_client_info": {
+          "package_name": "com.example.okul_otomat_hibrit"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAaPPMQ8RUv-o3qFAXqgNWSXj9krHb-kIc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

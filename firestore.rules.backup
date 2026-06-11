@@ -1,0 +1,218 @@
+rules_version = '2';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tugay BİLSEM Otomat Pro — Firestore Security Rules
+// Version: 1.0 (Production)
+// Architecture:
+//   - veliler          → Admin & Parent accounts (role field differentiates)
+//   - ogrenciler       → Student records (linked to veliler via veliIDleri)
+//   - personeller      → Staff accounts (same balance/transaction model as students)
+//   - urunler          → Product catalog (read by POS tablet, write by admin only)
+//   - stok_hareketleri → Stock ledger audit trail (append-only, admin write)
+//   - kasa_giderleri   → Operating expense ledger (admin only)
+//   - cocukTalepleri   → Parent child-linking requests
+// ─────────────────────────────────────────────────────────────────────────────
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // HELPER FUNCTIONS
+    // ─────────────────────────────────────────────────────────────────────────
+
+    // Is the request from a signed-in user?
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Reads the caller's own Veli document to check their role.
+    // We look up by UID match on the 'authID' field OR by doc ID being the UID.
+    // This is safe because Firestore rules only execute what's needed.
+    function getCallerVeli() {
+      return get(/databases/$(database)/documents/veliler/$(request.auth.uid));
+    }
+
+    // Is the caller an admin?
+    // Strategy: Their Veli document (keyed by their Firebase Auth UID) must have role == 'admin'.
+    // This is the ONLY enforcement point for admin privilege - Firestore document, not client code.
+    function isAdmin() {
+      return isAuthenticated()
+        && getCallerVeli().data.role == 'admin';
+    }
+
+    // Is this the POS / Flutter tablet app?
+    // The tablet runs as an anonymous or dedicated service account.
+    // BEST PRACTICE: Create a dedicated Firebase Auth user for the tablet
+    // (e.g. pos@okul.local) and store its UID in the rule below.
+    // Replace 'POS_TABLET_UID_BURAYA_YAZIN' with the actual UID from Firebase Console.
+    function isPosDevice() {
+      return isAuthenticated()
+        && request.auth.uid == 'POS_TABLET_UID_BURAYA_YAZIN';
+    }
+
+    // Is the caller a regular parent (Veli)?
+    function isVeli() {
+      return isAuthenticated()
+        && !isAdmin()
+        && !isPosDevice();
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // DEFAULT DENY — No document matches → access denied.
+    // This is the foundation. Everything below is an explicit ALLOW.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // COLLECTION: veliler
+    // Who can do what:
+    //   Admin  → Full CRUD (manage parents, set roles)
+    //   Veli   → Read & Update their OWN document only (e.g. password change flag)
+    //   POS    → Denied (POS doesn't need parent data)
+    // ─────────────────────────────────────────────────────────────────────────
+    match /veliler/{veliId} {
+      // Admin can do anything.
+      allow read, write: if isAdmin();
+
+      // A parent can read their own document.
+      allow read: if isVeli() && request.auth.uid == resource.data.authID;
+
+      // A parent can update their own document, but CANNOT change their role or authID.
+      // This prevents privilege escalation (a parent cannot make themselves an admin).
+      allow update: if isVeli()
+        && request.auth.uid == resource.data.authID
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'authID', 'veliID']);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // COLLECTION: ogrenciler
+    // Who can do what:
+    //   Admin  → Full CRUD
+    //   POS    → Read (to look up student by card), Update (balance, islemGecmisi)
+    //            but CANNOT delete or overwrite the entire document.
+    //   Veli   → Read ONLY their own children (where their veliID is in veliIDleri array)
+    // ─────────────────────────────────────────────────────────────────────────
+    match /ogrenciler/{ogrenciId} {
+      // Admin full access
+      allow read, write: if isAdmin();
+
+      // POS Tablet:
+      // - Can read a student document (to verify card + balance)
+      // - Can update ONLY balance, islemGecmisi, and maliyet snapshot fields.
+      // - CANNOT delete, CANNOT add/remove fields outside this whitelist.
+      allow read: if isPosDevice();
+      allow update: if isPosDevice()
+        && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['bakiye', 'islemGecmisi', 'maliyetSnapshot']);
+
+      // Parent can read their children's documents.
+      // The parent's veliID must be in the student's veliIDleri array.
+      allow read: if isVeli()
+        && request.auth.uid in resource.data.veliIDleri;
+      // Note: Using request.auth.uid in veliIDleri assumes the veliID stored there
+      // is the Firebase Auth UID. If it's a Firestore doc ID, use:
+      // && resource.data.veliIDleri.hasAny([request.auth.uid])
+      // The second pattern is already safe.
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // COLLECTION: personeller
+    // Staff accounts (teachers, managers). Same model as ogrenciler.
+    // Who can do what:
+    //   Admin  → Full CRUD
+    //   POS    → Read + Update balance/islemGecmisi (same as students)
+    //   Veli   → Denied
+    // ─────────────────────────────────────────────────────────────────────────
+    match /personeller/{personelId} {
+      allow read, write: if isAdmin();
+
+      allow read: if isPosDevice();
+      allow update: if isPosDevice()
+        && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['bakiye', 'islemGecmisi', 'maliyetSnapshot']);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // COLLECTION: urunler
+    // Product catalog.
+    // Who can do what:
+    //   Admin  → Full CRUD (add/edit/delete products, set prices, maliyet)
+    //   POS    → Read (to display products) + Update stock only (via runTransaction)
+    //   Veli   → Denied
+    // ─────────────────────────────────────────────────────────────────────────
+    match /urunler/{urunId} {
+      allow read, write: if isAdmin();
+
+      // POS reads the product catalog to display items.
+      allow read: if isPosDevice();
+
+      // POS can only update stock (stok field) during checkout transaction.
+      // All other fields (fiyat, maliyet, ad, resimURL) are admin-only.
+      allow update: if isPosDevice()
+        && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['stok']);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // COLLECTION: stok_hareketleri
+    // Immutable audit log for stock movements.
+    // Who can do what:
+    //   Admin  → Read all + Create (via updateStockWithLedger transaction)
+    //   POS    → Denied (POS does not write to the ledger directly)
+    //   Veli   → Denied
+    //
+    // SECURITY NOTE: Documents are append-only. Nobody can update or delete
+    // an existing ledger entry — not even admins. This ensures audit integrity.
+    // ─────────────────────────────────────────────────────────────────────────
+    match /stok_hareketleri/{hareketId} {
+      // Admins can read all entries and create new ones.
+      allow read, create: if isAdmin();
+
+      // NOBODY can update or delete a stock ledger entry.
+      // This is intentional — the ledger is immutable by design.
+      allow update, delete: if false;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // COLLECTION: kasa_giderleri
+    // Operating expense ledger (cash handovers, fuel, etc.)
+    // Who can do what:
+    //   Admin  → Full read + Create (add expenses)
+    //   POS    → Denied
+    //   Veli   → Denied
+    //
+    // Like stok_hareketleri, expense records are also immutable after creation.
+    // Deleting a expense record would corrupt the P&L reports.
+    // ─────────────────────────────────────────────────────────────────────────
+    match /kasa_giderleri/{giderId} {
+      allow read, create: if isAdmin();
+
+      // Immutable after creation — no updates or deletes.
+      allow update, delete: if false;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // COLLECTION: cocukTalepleri
+    // Parent requests to link their child to an account.
+    // Who can do what:
+    //   Admin  → Full CRUD (approve/reject requests, change status)
+    //   Veli   → Create new requests + Read their OWN requests only
+    //   POS    → Denied
+    // ─────────────────────────────────────────────────────────────────────────
+    match /cocukTalepleri/{talepId} {
+      allow read, write: if isAdmin();
+
+      // Parent can create a new request.
+      // Enforce that the veliID in the request matches the caller's UID.
+      allow create: if isVeli()
+        && request.resource.data.veliID == request.auth.uid;
+
+      // Parent can read only their own requests.
+      allow read: if isVeli()
+        && resource.data.veliID == request.auth.uid;
+
+      // Parents cannot update or delete requests — only admins can.
+      allow update, delete: if false;
+    }
+
+  }
+}
